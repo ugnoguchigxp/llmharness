@@ -33,6 +33,25 @@ const createAstmendLib = async (dir: string): Promise<string> => {
 	return modulePath;
 };
 
+const createAstmendLibModern = async (dir: string): Promise<string> => {
+	const modulePath = join(dir, "fake-astmend-modern.mjs");
+	await writeFile(
+		modulePath,
+		[
+			"export const applyPatchFromFile = async (input) => ({",
+			"  success: true,",
+			"  patchedFiles: [String(input?.file ?? 'src/index.ts')],",
+			"  rejects: [],",
+			"  diagnostics: ['modern-response'],",
+			"  diff: 'Index: src/index.ts\\n+import { runPipeline } from \\\"./utils\\\";\\n'",
+			"});",
+			"",
+		].join("\n"),
+		"utf-8",
+	);
+	return modulePath;
+};
+
 describe("astmend adapter contract", () => {
 	test("supports lib mode entrypoint contract", async () => {
 		const dir = await createTempDir("llmharness-astmend-lib");
@@ -67,6 +86,44 @@ describe("astmend adapter contract", () => {
 			expect(result.success).toBe(true);
 			expect(result.patchedFiles).toEqual(["src/index.ts"]);
 			expect(result.diff?.includes("Index: src/index.ts")).toBe(true);
+		} finally {
+			await cleanupTempDir(dir);
+		}
+	});
+
+	test("supports modern ApplyResponse shape from library", async () => {
+		const dir = await createTempDir("llmharness-astmend-lib-modern");
+		try {
+			const libEntrypoint = await createAstmendLibModern(dir);
+			const config = parseHarnessConfig({
+				runtime: "bun",
+				workspaceRoot: dir,
+				adapters: {
+					localLlm: {
+						mode: "cli",
+						command: "echo '{}'",
+						model: "test-model",
+					},
+					astmend: {
+						mode: "lib",
+						libEntrypoint,
+					},
+					diffGuard: {
+						mode: "cli",
+						command: "echo '{}'",
+					},
+				},
+			});
+
+			const result = await applyWithAstmend({
+				patch,
+				targetFiles: ["src/index.ts"],
+				config,
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.patchedFiles).toEqual(["src/index.ts"]);
+			expect(result.diagnostics).toContain("modern-response");
 		} finally {
 			await cleanupTempDir(dir);
 		}

@@ -24,9 +24,13 @@ type AstmendApiResponse = {
 };
 
 type AstmendLibPatchResult = {
-	changed: boolean;
-	updatedText: string;
-	diff: string;
+	success?: unknown;
+	patchedFiles?: unknown;
+	rejects?: unknown;
+	diagnostics?: unknown;
+	diff?: unknown;
+	updatedText?: unknown;
+	changed?: unknown;
 };
 
 type AstmendLibModule = {
@@ -178,6 +182,30 @@ const applyWithAstmendLib = async (
 		}
 
 		const result = await astmendModule.applyPatchFromFile(prepared.operation);
+
+		if (
+			isRecord(result) &&
+			("success" in result ||
+				"patchedFiles" in result ||
+				"rejects" in result ||
+				"diagnostics" in result)
+		) {
+			return normalizeApplyResult(result, targetFiles);
+		}
+
+		if (!isRecord(result) || typeof result.changed !== "boolean") {
+			return parseApplyResult({
+				success: false,
+				patchedFiles: [],
+				rejects: targetFiles.map((path) => ({
+					path,
+					reason:
+						"Astmend library returned unsupported response shape from applyPatchFromFile.",
+				})),
+				diagnostics: ["Astmend library response shape is unsupported."],
+			});
+		}
+
 		const patchedFile = String(
 			prepared.operation.file ?? targetFiles[0] ?? "unknown.ts",
 		);
@@ -194,9 +222,11 @@ const applyWithAstmendLib = async (
 					],
 			diagnostics: [
 				"Astmend library fallback executed.",
-				result.diff.length > 0 ? "diff generated" : "diff empty",
+				typeof result.diff === "string" && result.diff.length > 0
+					? "diff generated"
+					: "diff empty",
 			],
-			diff: result.diff,
+			diff: typeof result.diff === "string" ? result.diff : undefined,
 		});
 	} catch (error) {
 		return parseApplyResult({
