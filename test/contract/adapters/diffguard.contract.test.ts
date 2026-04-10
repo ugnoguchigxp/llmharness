@@ -154,11 +154,7 @@ describe("diffGuard adapter contract", () => {
 			const cli = await createCliScript(
 				dir,
 				"diffguard-empty.sh",
-				[
-					"cat <<'JSON'",
-					'{"issues":[],"blocking":false}',
-					"JSON",
-				].join("\n"),
+				["cat <<'JSON'", '{"issues":[],"blocking":false}', "JSON"].join("\n"),
 			);
 			const config = parseHarnessConfig({
 				runtime: "bun",
