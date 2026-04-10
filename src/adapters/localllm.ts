@@ -9,10 +9,17 @@ import { runCommand } from "../utils/exec";
 import { postJson } from "../utils/http";
 import { tryParseJson } from "../utils/json";
 
+export type Feedback = {
+	attempt: number;
+	previousIssues: string[];
+	previousRejects: Array<{ path: string; reason: string }>;
+};
+
 export type LocalLlmInput = {
 	scenario: ScenarioInput;
 	config: HarnessConfig;
 	memoryContext?: string;
+	feedback?: Feedback;
 };
 
 type OpenAICompatibleResponse = {
@@ -80,8 +87,9 @@ const toFiniteNumber = (value: unknown): number => {
 	return 0;
 };
 
-const buildPrompt = (scenario: ScenarioInput): string => {
-	return [
+const buildPrompt = (input: LocalLlmInput): string => {
+	const { scenario, feedback } = input;
+	const parts = [
 		"You are a code-fix model.",
 		"Return exactly one JSON object for Astmend patch operation.",
 		'Do not include markdown fences or explanation. Output must start with "{" and end with "}".',
@@ -96,9 +104,28 @@ const buildPrompt = (scenario: ScenarioInput): string => {
 		`Scenario ID: ${scenario.id}`,
 		`Title: ${scenario.title}`,
 		`Target files: ${scenario.targetFiles.join(", ")}`,
-		"Instruction:",
-		scenario.instruction,
-	].join("\n");
+	];
+
+	if (feedback) {
+		parts.push(`[Retry Feedback (Attempt ${feedback.attempt})]`);
+		if (feedback.previousIssues.length > 0) {
+			parts.push("Previous issues:");
+			for (const issue of feedback.previousIssues) {
+				parts.push(`- ${issue}`);
+			}
+		}
+		if (feedback.previousRejects.length > 0) {
+			parts.push("Previous patch rejections:");
+			for (const reject of feedback.previousRejects) {
+				parts.push(`- ${reject.path}: ${reject.reason}`);
+			}
+		}
+		parts.push("");
+	}
+
+	parts.push("Instruction:");
+	parts.push(scenario.instruction);
+	return parts.join("\n");
 };
 
 const resolveUrl = (baseUrl: string, path: string): string => {
@@ -301,7 +328,7 @@ export const generateWithLocalLlm = async (
 ): Promise<GenerateResult> => {
 	const { scenario, config, memoryContext } = input;
 	const llmConfig = config.adapters.localLlm;
-	const basePrompt = buildPrompt(scenario);
+	const basePrompt = buildPrompt(input);
 	const prompt = memoryContext
 		? `[Memory Context]\n${memoryContext}\n\n[Task]\n${basePrompt}`
 		: basePrompt;

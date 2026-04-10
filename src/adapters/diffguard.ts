@@ -82,6 +82,38 @@ const normalizeFindings = (payload: unknown): RiskResult["findings"] => {
 	});
 };
 
+const toNonNegativeInt = (value: unknown): number | undefined => {
+	if (typeof value !== "number" || !Number.isFinite(value)) {
+		return undefined;
+	}
+	return Math.max(0, Math.trunc(value));
+};
+
+const normalizeLevelCounts = (
+	payload: unknown,
+): RiskResult["levelCounts"] | undefined => {
+	if (!isRecord(payload)) {
+		return undefined;
+	}
+
+	const error = toNonNegativeInt(payload.error);
+	const warn = toNonNegativeInt(payload.warn);
+	const info = toNonNegativeInt(payload.info);
+	if (
+		typeof error !== "number" &&
+		typeof warn !== "number" &&
+		typeof info !== "number"
+	) {
+		return undefined;
+	}
+
+	return {
+		error: error ?? 0,
+		warn: warn ?? 0,
+		info: info ?? 0,
+	};
+};
+
 const withComputedCounts = (
 	findings: RiskResult["findings"],
 	forcedBlocking?: boolean,
@@ -104,13 +136,31 @@ const withComputedCounts = (
 
 const normalizeRiskResult = (payload: unknown): RiskResult => {
 	if (isRecord(payload)) {
-		const parsedFindings = normalizeFindings(
-			payload.findings ?? payload.issues,
-		);
+		const findingsPayload = Array.isArray(payload.findings)
+			? payload.findings
+			: payload.issues;
+		const parsedFindings = normalizeFindings(findingsPayload);
 		const blocking =
 			typeof payload.blocking === "boolean" ? payload.blocking : undefined;
 		if (parsedFindings.length > 0) {
 			return withComputedCounts(parsedFindings, blocking);
+		}
+
+		const counts = normalizeLevelCounts(payload.levelCounts) ?? {
+			error: 0,
+			warn: 0,
+			info: 0,
+		};
+		if (
+			Array.isArray(findingsPayload) ||
+			isRecord(payload.levelCounts) ||
+			typeof payload.blocking === "boolean"
+		) {
+			return parseRiskResult({
+				levelCounts: counts,
+				findings: [],
+				blocking: typeof blocking === "boolean" ? blocking : counts.error > 0,
+			});
 		}
 	}
 

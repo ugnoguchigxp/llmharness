@@ -86,6 +86,12 @@ export const HarnessScoringConfigSchema = z
 	})
 	.strict();
 
+export const OrchestratorConfigSchema = z
+	.object({
+		maxAttempts: z.number().int().positive().default(3),
+	})
+	.strict();
+
 export const HarnessConfigSchema = z
 	.object({
 		runtime: z.literal("bun"),
@@ -111,6 +117,9 @@ export const HarnessConfigSchema = z
 				}),
 			})
 			.strict(),
+		orchestrator: OrchestratorConfigSchema.default({
+			maxAttempts: 3,
+		}),
 		checks: HarnessChecksConfigSchema.default({
 			runTypecheck: true,
 			typecheckCommand: "bun run typecheck",
@@ -137,4 +146,5 @@ export type AstmendConfig = z.infer<typeof AstmendConfigSchema>;
 export type DiffGuardConfig = z.infer<typeof DiffGuardConfigSchema>;
 export type HarnessChecksConfig = z.infer<typeof HarnessChecksConfigSchema>;
 export type HarnessScoringConfig = z.infer<typeof HarnessScoringConfigSchema>;
+export type OrchestratorConfig = z.infer<typeof OrchestratorConfigSchema>;
 export type HarnessConfig = z.infer<typeof HarnessConfigSchema>;

@@ -18,9 +18,9 @@ export const runSingleScenario = async (
 ): Promise<string> => {
 	const config = await loadHarnessConfig(configPath);
 	const scenario = await loadScenarioById(scenarioId);
-	const result = await runPipeline(scenario, config);
-
 	const paths = await createRunPaths(config.artifactsDir);
+	const result = await runPipeline(scenario, config, paths.runDir);
+
 	result.artifacts.push(
 		{ kind: "report", path: paths.reportJsonPath },
 		{ kind: "report", path: paths.reportMarkdownPath },
@@ -43,8 +43,8 @@ export const runSuite = async (
 	const runDirs: string[] = [];
 
 	for (const scenario of scenarios) {
-		const result = await runPipeline(scenario, config);
 		const paths = await createRunPaths(config.artifactsDir);
+		const result = await runPipeline(scenario, config, paths.runDir);
 		result.artifacts.push(
 			{ kind: "report", path: paths.reportJsonPath },
 			{ kind: "report", path: paths.reportMarkdownPath },

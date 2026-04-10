@@ -147,4 +147,90 @@ describe("diffGuard adapter contract", () => {
 			await cleanupTempDir(dir);
 		}
 	});
+
+	test("accepts empty findings payload as non-blocking", async () => {
+		const dir = await createTempDir("llmharness-diffguard-4");
+		try {
+			const cli = await createCliScript(
+				dir,
+				"diffguard-empty.sh",
+				[
+					"cat <<'JSON'",
+					'{"issues":[],"blocking":false}',
+					"JSON",
+				].join("\n"),
+			);
+			const config = parseHarnessConfig({
+				runtime: "bun",
+				workspaceRoot: dir,
+				adapters: {
+					localLlm: {
+						mode: "cli",
+						command: "echo '{}'",
+						model: "test-model",
+					},
+					astmend: {
+						mode: "lib",
+						libEntrypoint: "./unused.mjs",
+					},
+					diffGuard: {
+						mode: "cli",
+						command: cli,
+						timeoutMs: 5000,
+					},
+				},
+			});
+
+			const result = await reviewWithDiffGuard({ patch, config });
+
+			expect(result.blocking).toBe(false);
+			expect(result.levelCounts).toEqual({ error: 0, warn: 0, info: 0 });
+			expect(result.findings).toEqual([]);
+		} finally {
+			await cleanupTempDir(dir);
+		}
+	});
+
+	test("uses levelCounts when findings are empty", async () => {
+		const dir = await createTempDir("llmharness-diffguard-5");
+		try {
+			const cli = await createCliScript(
+				dir,
+				"diffguard-levelcounts.sh",
+				[
+					"cat <<'JSON'",
+					'{"findings":[],"levelCounts":{"error":0,"warn":2,"info":1},"blocking":false}',
+					"JSON",
+				].join("\n"),
+			);
+			const config = parseHarnessConfig({
+				runtime: "bun",
+				workspaceRoot: dir,
+				adapters: {
+					localLlm: {
+						mode: "cli",
+						command: "echo '{}'",
+						model: "test-model",
+					},
+					astmend: {
+						mode: "lib",
+						libEntrypoint: "./unused.mjs",
+					},
+					diffGuard: {
+						mode: "cli",
+						command: cli,
+						timeoutMs: 5000,
+					},
+				},
+			});
+
+			const result = await reviewWithDiffGuard({ patch, config });
+
+			expect(result.blocking).toBe(false);
+			expect(result.levelCounts).toEqual({ error: 0, warn: 2, info: 1 });
+			expect(result.findings).toEqual([]);
+		} finally {
+			await cleanupTempDir(dir);
+		}
+	});
 });

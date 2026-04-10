@@ -91,6 +91,26 @@ export const ArtifactSchema = z
 
 export const FinalDecisionSchema = z.enum(["pass", "fail", "error"]);
 
+export const OrchestratorStateSchema = z
+	.object({
+		attempt: z.number().int().positive(),
+		maxAttempts: z.number().int().positive(),
+		lastPatch: z.string().optional(),
+		lastApplyRejects: z.array(ApplyRejectSchema).default([]),
+		lastRiskFindings: z.array(RiskFindingSchema).default([]),
+		feedbackForNextPrompt: z.string().optional(),
+	})
+	.strict();
+
+export const AttemptResultSchema = z
+	.object({
+		attempt: z.number().int().positive(),
+		generate: GenerateResultSchema,
+		apply: ApplyResultSchema,
+		risk: RiskResultSchema,
+	})
+	.strict();
+
 export const ScenarioResultSchema = z
 	.object({
 		scenarioId: z.string().min(1),
@@ -101,6 +121,8 @@ export const ScenarioResultSchema = z
 		apply: ApplyResultSchema.optional(),
 		risk: RiskResultSchema.optional(),
 		judges: z.array(JudgeResultSchema).default([]),
+		attempts: z.array(AttemptResultSchema).default([]),
+		orchestratorState: OrchestratorStateSchema.optional(),
 	})
 	.strict();
 
@@ -116,3 +138,5 @@ export type JudgeResult = z.infer<typeof JudgeResultSchema>;
 export type Artifact = z.infer<typeof ArtifactSchema>;
 export type FinalDecision = z.infer<typeof FinalDecisionSchema>;
 export type ScenarioResult = z.infer<typeof ScenarioResultSchema>;
+export type OrchestratorState = z.infer<typeof OrchestratorStateSchema>;
+export type AttemptResult = z.infer<typeof AttemptResultSchema>;
