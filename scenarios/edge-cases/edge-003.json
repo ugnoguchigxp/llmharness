@@ -1,0 +1,12 @@
+{
+	"id": "edge-003",
+	"suite": "edge-cases",
+	"title": "Edge stable formatting",
+	"instruction": "Return one structurally valid operation and avoid prose.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

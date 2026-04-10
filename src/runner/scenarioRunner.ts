@@ -10,6 +10,8 @@ import {
 import type { ScenarioSuite } from "../schemas";
 import { runPipeline } from "./pipeline";
 
+const ALL_SUITES: ScenarioSuite[] = ["smoke", "regression", "edge-cases"];
+
 export const runSingleScenario = async (
 	scenarioId: string,
 	configPath?: string,
@@ -56,5 +58,14 @@ export const runSuite = async (
 		runDirs.push(paths.runDir);
 	}
 
+	return runDirs;
+};
+
+export const runAllSuites = async (configPath?: string): Promise<string[]> => {
+	const runDirs: string[] = [];
+	for (const suite of ALL_SUITES) {
+		const suiteRunDirs = await runSuite(suite, configPath);
+		runDirs.push(...suiteRunDirs);
+	}
 	return runDirs;
 };

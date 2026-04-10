@@ -1,0 +1,12 @@
+{
+	"id": "smoke-003",
+	"suite": "smoke",
+	"title": "Doctor module safety patch",
+	"instruction": "Propose a conservative patch operation for src/doctor.ts only.",
+	"targetFiles": ["src/doctor.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

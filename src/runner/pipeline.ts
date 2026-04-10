@@ -124,16 +124,19 @@ export const runPipeline = async (
 				],
 			}),
 	);
-	const behaviorJudge = await runBehaviorJudge(config, workspaceRoot).catch(
-		(error) =>
-			parseJudgeResult({
-				phase: "test",
-				score: 0,
-				pass: false,
-				reasons: [
-					`Test execution failed: ${error instanceof Error ? error.message : String(error)}`,
-				],
-			}),
+	const behaviorJudge = await runBehaviorJudge({
+		config,
+		workspaceRoot,
+		mustPassTests: scenario.expected.mustPassTests,
+	}).catch((error) =>
+		parseJudgeResult({
+			phase: "test",
+			score: 0,
+			pass: false,
+			reasons: [
+				`Test execution failed: ${error instanceof Error ? error.message : String(error)}`,
+			],
+		}),
 	);
 	const riskJudge = runRiskJudge(risk, scenario, config);
 

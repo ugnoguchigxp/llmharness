@@ -1,0 +1,12 @@
+{
+	"id": "regression-004",
+	"suite": "regression",
+	"title": "Regression minimal scope",
+	"instruction": "Produce the smallest possible safe patch operation on src/index.ts.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

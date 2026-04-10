@@ -1,0 +1,12 @@
+{
+	"id": "edge-006",
+	"suite": "edge-cases",
+	"title": "Edge deterministic contract",
+	"instruction": "Produce one deterministic operation for src/index.ts and no explanation.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

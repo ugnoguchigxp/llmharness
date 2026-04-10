@@ -1,0 +1,12 @@
+{
+	"id": "edge-005",
+	"suite": "edge-cases",
+	"title": "Edge no markdown fences",
+	"instruction": "Do not use markdown fences; return only operation JSON.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

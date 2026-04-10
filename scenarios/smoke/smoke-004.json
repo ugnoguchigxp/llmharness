@@ -1,0 +1,12 @@
+{
+	"id": "smoke-004",
+	"suite": "smoke",
+	"title": "Reporter path module patch",
+	"instruction": "Return one valid Astmend operation targeting src/reporterPaths.ts.",
+	"targetFiles": ["src/reporterPaths.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

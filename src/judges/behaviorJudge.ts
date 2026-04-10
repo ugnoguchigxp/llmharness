@@ -5,10 +5,17 @@ import {
 	parseJudgeResult,
 } from "../schemas";
 
+export type BehaviorJudgeInput = {
+	config: HarnessConfig;
+	workspaceRoot: string;
+	mustPassTests: string[];
+};
+
 export const runBehaviorJudge = async (
-	config: HarnessConfig,
-	workspaceRoot: string,
+	input: BehaviorJudgeInput,
 ): Promise<JudgeResult> => {
+	const { config, workspaceRoot, mustPassTests } = input;
+
 	if (!config.checks.runTests) {
 		return parseJudgeResult({
 			phase: "test",
@@ -19,16 +26,38 @@ export const runBehaviorJudge = async (
 	}
 
 	const command = await runTests(config, workspaceRoot);
-	const pass = command.exitCode === 0;
+	const missingRequiredTests = mustPassTests.filter(
+		(testId) =>
+			!command.stdout.includes(testId) && !command.stderr.includes(testId),
+	);
+	const pass = command.exitCode === 0 && missingRequiredTests.length === 0;
+
+	if (command.exitCode !== 0) {
+		return parseJudgeResult({
+			phase: "test",
+			score: 0,
+			pass: false,
+			reasons: [
+				`Tests failed (exit=${command.exitCode}): ${command.stderr.trim() || "no stderr"}`,
+			],
+		});
+	}
+
+	if (missingRequiredTests.length > 0) {
+		return parseJudgeResult({
+			phase: "test",
+			score: 0,
+			pass: false,
+			reasons: [
+				`Required tests not found in output: ${missingRequiredTests.join(", ")}`,
+			],
+		});
+	}
 
 	return parseJudgeResult({
 		phase: "test",
 		score: pass ? config.scoring.testWeight : 0,
 		pass,
-		reasons: pass
-			? ["Tests passed."]
-			: [
-					`Tests failed (exit=${command.exitCode}): ${command.stderr.trim() || "no stderr"}`,
-				],
+		reasons: ["Tests passed."],
 	});
 };

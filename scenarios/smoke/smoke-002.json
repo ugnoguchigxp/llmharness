@@ -1,0 +1,12 @@
+{
+	"id": "smoke-002",
+	"suite": "smoke",
+	"title": "CLI entrypoint safety patch",
+	"instruction": "Produce one safe and minimal patch operation for src/cli.ts.",
+	"targetFiles": ["src/cli.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

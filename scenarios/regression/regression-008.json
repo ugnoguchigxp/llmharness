@@ -1,0 +1,12 @@
+{
+	"id": "regression-008",
+	"suite": "regression",
+	"title": "Regression final sanity",
+	"instruction": "Return a single Astmend patch operation for src/index.ts with no extra text.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

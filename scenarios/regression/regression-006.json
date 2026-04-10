@@ -1,0 +1,12 @@
+{
+	"id": "regression-006",
+	"suite": "regression",
+	"title": "Regression parser stability",
+	"instruction": "Respond with one parseable patch operation JSON for src/index.ts.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

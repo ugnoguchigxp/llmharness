@@ -1,0 +1,12 @@
+{
+	"id": "edge-007",
+	"suite": "edge-cases",
+	"title": "Edge parser guard",
+	"instruction": "Return one parseable operation JSON suitable for strict Zod parsing.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

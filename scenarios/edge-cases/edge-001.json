@@ -1,0 +1,12 @@
+{
+	"id": "edge-001",
+	"suite": "edge-cases",
+	"title": "Edge strict JSON only",
+	"instruction": "Output must be exactly one JSON operation object for Astmend.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

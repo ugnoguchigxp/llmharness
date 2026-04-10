@@ -1,0 +1,12 @@
+{
+	"id": "edge-002",
+	"suite": "edge-cases",
+	"title": "Edge low-change requirement",
+	"instruction": "Generate a minimal-change operation targeting src/index.ts only.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

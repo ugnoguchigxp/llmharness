@@ -15,8 +15,8 @@ describe("HarnessConfigSchema", () => {
 					model: "gemma4-default",
 				},
 				astmend: {
-					mode: "cli",
-					command: "astmend apply --json",
+					mode: "lib",
+					libEntrypoint: "../Astmend/dist/index.js",
 				},
 				diffGuard: {
 					mode: "cli",
@@ -27,6 +27,7 @@ describe("HarnessConfigSchema", () => {
 
 		expect(value.runtime).toBe("bun");
 		expect(value.adapters.localLlm.mode).toBe("cli");
+		expect(value.adapters.astmend.mode).toBe("lib");
 		expect(value.checks.runTests).toBe(true);
 	});
 
@@ -56,6 +57,24 @@ describe("HarnessConfigSchema", () => {
 						model: "x",
 					},
 					astmend: { mode: "cli", command: "astmend" },
+					diffGuard: { mode: "cli", command: "diffguard" },
+				},
+			}),
+		).toThrow("HarnessConfig validation failed");
+	});
+
+	test("rejects unsupported localLlm mode", () => {
+		expect(() =>
+			parseHarnessConfig({
+				runtime: "bun",
+				workspaceRoot: ".",
+				adapters: {
+					localLlm: {
+						mode: "lib",
+						command: "localLlm",
+						model: "x",
+					},
+					astmend: { mode: "lib", libEntrypoint: "../Astmend/dist/index.js" },
 					diffGuard: { mode: "cli", command: "diffguard" },
 				},
 			}),

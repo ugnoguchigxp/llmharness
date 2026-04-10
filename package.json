@@ -7,6 +7,7 @@
 		"llmharness": "bun run src/cli.ts",
 		"run": "bun run src/cli.ts run --scenario smoke-001",
 		"eval": "bun run src/cli.ts eval --suite smoke",
+		"eval:all": "bun run src/cli.ts eval --suite all",
 		"report": "bun run src/cli.ts report --latest",
 		"doctor": "bun run src/cli.ts doctor",
 		"lint": "biome check .",
@@ -14,7 +15,9 @@
 		"format": "biome format . --write",
 		"typecheck": "tsc --noEmit",
 		"test": "bun test",
-		"smoke": "bun run src/cli.ts run --scenario smoke-001"
+		"test:contract": "bun test test/contract",
+		"smoke": "bun run src/cli.ts run --scenario smoke-001",
+		"smoke:eval": "bun run src/cli.ts eval --suite smoke"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.11",

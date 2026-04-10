@@ -1,0 +1,12 @@
+{
+	"id": "smoke-005",
+	"suite": "smoke",
+	"title": "Core export patch",
+	"instruction": "Generate a minimal valid patch operation for src/index.ts.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

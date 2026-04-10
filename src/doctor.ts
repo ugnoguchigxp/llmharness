@@ -153,7 +153,7 @@ export const runDoctor = async (
 		} else {
 			items.push(cliHealth);
 		}
-	} else {
+	} else if (config.adapters.astmend.mode === "api") {
 		items.push(
 			checkApi(
 				"astmend.api",
@@ -161,6 +161,16 @@ export const runDoctor = async (
 				config.adapters.astmend.apiPath,
 			),
 		);
+	} else {
+		const libPath = resolve(cwd, config.adapters.astmend.libEntrypoint);
+		const libExists = await exists(libPath);
+		items.push({
+			name: "astmend.lib",
+			status: libExists ? "ok" : "error",
+			message: libExists
+				? `library entrypoint found: ${libPath}`
+				: `library entrypoint not found: ${libPath}`,
+		});
 	}
 
 	if (config.adapters.diffGuard.mode === "cli") {

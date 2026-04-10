@@ -2,13 +2,17 @@ import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { loadHarnessConfig } from "./config/loadConfig";
 import { runDoctor, summarizeDoctor } from "./doctor";
-import { runSingleScenario, runSuite } from "./runner/scenarioRunner";
+import {
+	runAllSuites,
+	runSingleScenario,
+	runSuite,
+} from "./runner/scenarioRunner";
 import { type ScenarioSuite, ScenarioSuiteSchema } from "./schemas";
 import { parseArgv } from "./utils/argv";
 
 const printHelp = (): void => {
 	console.log(
-		`llmharness commands:\n  run --scenario <id> [--config <path>]\n  eval --suite <smoke|regression|edge-cases> [--config <path>]\n  report --latest [--config <path>]\n  doctor [--config <path>]`,
+		`llmharness commands:\n  run --scenario <id> [--config <path>]\n  eval --suite <smoke|regression|edge-cases|all> [--config <path>]\n  report --latest [--config <path>]\n  doctor [--config <path>]`,
 	);
 };
 
@@ -46,9 +50,14 @@ const evalCommand = async (
 	flags: Record<string, string | boolean>,
 ): Promise<void> => {
 	const suiteArg = assertStringFlag(flags, "suite");
-	const suite = ScenarioSuiteSchema.parse(suiteArg) as ScenarioSuite;
 	const configPath = getOptionalConfigPath(flags);
-	const runDirs = await runSuite(suite, configPath);
+	const runDirs =
+		suiteArg === "all"
+			? await runAllSuites(configPath)
+			: await runSuite(
+					ScenarioSuiteSchema.parse(suiteArg) as ScenarioSuite,
+					configPath,
+				);
 	console.log(`eval completed: ${runDirs.length} scenario(s)`);
 	for (const dir of runDirs) {
 		console.log(`- ${dir}`);

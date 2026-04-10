@@ -1,11 +1,13 @@
 import { z } from "zod";
 
-export const AdapterModeSchema = z.enum(["api", "cli"]);
+export const LocalLlmModeSchema = z.enum(["api", "cli"]);
+export const AstmendModeSchema = z.enum(["api", "cli", "lib"]);
+export const DiffGuardModeSchema = z.enum(["api", "cli"]);
 export const PromptModeSchema = z.enum(["stdin", "arg"]);
 
 export const LocalLlmConfigSchema = z
 	.object({
-		mode: AdapterModeSchema.default("cli"),
+		mode: LocalLlmModeSchema.default("cli"),
 		apiBaseUrl: z.string().url().optional(),
 		apiPath: z.string().min(1).default("/v1/chat/completions"),
 		apiKeyEnv: z.string().min(1).default("LOCAL_LLM_API_KEY"),
@@ -20,7 +22,7 @@ export const LocalLlmConfigSchema = z
 
 export const AstmendConfigSchema = z
 	.object({
-		mode: AdapterModeSchema.default("cli"),
+		mode: AstmendModeSchema.default("lib"),
 		endpoint: z.string().url().optional(),
 		apiPath: z.string().min(1).default("/apply"),
 		command: z.string().min(1).default("astmend apply --json"),
@@ -32,7 +34,7 @@ export const AstmendConfigSchema = z
 
 export const DiffGuardConfigSchema = z
 	.object({
-		mode: AdapterModeSchema.default("cli"),
+		mode: DiffGuardModeSchema.default("cli"),
 		endpoint: z.string().url().optional(),
 		apiPath: z.string().min(1).default("/review"),
 		command: z.string().min(1).default("diffguard --format json"),
@@ -89,7 +91,9 @@ export const HarnessConfigSchema = z
 	})
 	.strict();
 
-export type AdapterMode = z.infer<typeof AdapterModeSchema>;
+export type LocalLlmMode = z.infer<typeof LocalLlmModeSchema>;
+export type AstmendMode = z.infer<typeof AstmendModeSchema>;
+export type DiffGuardMode = z.infer<typeof DiffGuardModeSchema>;
 export type LocalLlmConfig = z.infer<typeof LocalLlmConfigSchema>;
 export type AstmendConfig = z.infer<typeof AstmendConfigSchema>;
 export type DiffGuardConfig = z.infer<typeof DiffGuardConfigSchema>;

@@ -1,0 +1,12 @@
+{
+	"id": "regression-001",
+	"suite": "regression",
+	"title": "Regression baseline import safety",
+	"instruction": "Return one valid and minimal Astmend operation for src/index.ts.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

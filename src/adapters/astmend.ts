@@ -263,6 +263,10 @@ export const applyWithAstmend = async (
 		}
 	}
 
+	if (astmendConfig.mode === "lib") {
+		return applyWithAstmendLib(patch, targetFiles, config);
+	}
+
 	const cliResult = await runCommand(astmendConfig.command, {
 		cwd: resolve(config.workspaceRoot),
 		stdin: patch,

@@ -1,0 +1,12 @@
+{
+	"id": "edge-004",
+	"suite": "edge-cases",
+	"title": "Edge fallback compatibility",
+	"instruction": "Provide one operation compatible with Astmend applyPatchFromFile.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

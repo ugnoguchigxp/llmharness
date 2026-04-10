@@ -1,0 +1,12 @@
+{
+	"id": "regression-007",
+	"suite": "regression",
+	"title": "Regression target-file alignment",
+	"instruction": "Generate one safe operation aligned to the first target file only.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

@@ -1,0 +1,12 @@
+{
+	"id": "regression-003",
+	"suite": "regression",
+	"title": "Regression no-explanation output",
+	"instruction": "Output one strict JSON operation for Astmend without markdown.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}

@@ -1,0 +1,12 @@
+{
+	"id": "regression-002",
+	"suite": "regression",
+	"title": "Regression deterministic patch",
+	"instruction": "Generate a conservative patch operation that only updates src/index.ts.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}
