@@ -12,6 +12,7 @@ import { tryParseJson } from "../utils/json";
 export type LocalLlmInput = {
 	scenario: ScenarioInput;
 	config: HarnessConfig;
+	memoryContext?: string;
 };
 
 type OpenAICompatibleResponse = {
@@ -298,9 +299,12 @@ const shellQuote = (value: string): string => {
 export const generateWithLocalLlm = async (
 	input: LocalLlmInput,
 ): Promise<GenerateResult> => {
-	const { scenario, config } = input;
+	const { scenario, config, memoryContext } = input;
 	const llmConfig = config.adapters.localLlm;
-	const prompt = buildPrompt(scenario);
+	const basePrompt = buildPrompt(scenario);
+	const prompt = memoryContext
+		? `[Memory Context]\n${memoryContext}\n\n[Task]\n${basePrompt}`
+		: basePrompt;
 	const workspaceRoot = resolve(config.workspaceRoot);
 
 	if (llmConfig.mode === "api") {

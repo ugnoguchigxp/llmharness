@@ -51,6 +51,30 @@ export const HarnessChecksConfigSchema = z
 	})
 	.strict();
 
+export const MemoryConfigSchema = z
+	.object({
+		enabled: z.boolean().default(false),
+		mode: z.enum(["cli", "mcp"]).default("cli"),
+		gnosisPath: z.string().min(1).default("../gnosis"),
+		sessionId: z.string().min(1).default("llmharness"),
+		ragLimit: z.number().int().positive().default(5),
+		verifyCommands: z
+			.array(z.string())
+			.default(["bun run lint", "bun run typecheck", "bun test"]),
+		git: z
+			.object({
+				autoCommit: z.boolean().default(false),
+				autoPush: z.boolean().default(false),
+				commitMessagePrefix: z.string().default("harness: "),
+			})
+			.default({
+				autoCommit: false,
+				autoPush: false,
+				commitMessagePrefix: "harness: ",
+			}),
+	})
+	.strict();
+
 export const HarnessScoringConfigSchema = z
 	.object({
 		syntaxWeight: z.number().int().nonnegative().default(30),
@@ -72,6 +96,19 @@ export const HarnessConfigSchema = z
 				localLlm: LocalLlmConfigSchema,
 				astmend: AstmendConfigSchema,
 				diffGuard: DiffGuardConfigSchema,
+				memory: MemoryConfigSchema.default({
+					enabled: false,
+					mode: "cli",
+					gnosisPath: "../gnosis",
+					sessionId: "llmharness",
+					ragLimit: 5,
+					verifyCommands: ["bun run lint", "bun run typecheck", "bun test"],
+					git: {
+						autoCommit: false,
+						autoPush: false,
+						commitMessagePrefix: "harness: ",
+					},
+				}),
 			})
 			.strict(),
 		checks: HarnessChecksConfigSchema.default({
@@ -91,6 +128,7 @@ export const HarnessConfigSchema = z
 	})
 	.strict();
 
+export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
 export type LocalLlmMode = z.infer<typeof LocalLlmModeSchema>;
 export type AstmendMode = z.infer<typeof AstmendModeSchema>;
 export type DiffGuardMode = z.infer<typeof DiffGuardModeSchema>;

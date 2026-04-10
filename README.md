@@ -15,6 +15,7 @@ TypeScript + Bun で構築した LLM 修正評価ハーネスです。`localLlm`
 - `bun run eval:all`
 - `bun run src/cli.ts report --latest`
 - `bun run doctor`
+- `bun run src/cli.ts commit-memory` (Gnosis への同期と検証)
 
 ## Adapter Modes
 
@@ -70,3 +71,34 @@ Adapter I/F の破壊的変更検知のため、`test/contract/adapters/` に契
 3. 問題がなければ実行
 - `bun run src/cli.ts run --scenario smoke-001 --config configs/harness.config.json`
 - `bun run src/cli.ts eval --suite smoke --config configs/harness.config.json`
+## Memory Integration (Gnosis)
+
+`gnosis` プロジェクトと連携して、過去の修正事例を RAG として利用したり、成功したパッチを知識として蓄積したりできます。
+
+### 有効化 (`configs/harness.config.json`)
+
+```json
+{
+  "adapters": {
+    "memory": {
+      "enabled": true,
+      "gnosisPath": "../gnosis",
+      "sessionId": "my-project"
+    }
+  }
+}
+```
+
+### 知識の同期
+
+開発後、以下のコマンドを実行することで、プロジェクトの整合性チェック（lint, test等）を行い、パスした場合に最新の成功パッチを `gnosis` へ同期し、Git コミットまで実行します。
+
+```bash
+# 基本用法（メッセージ指定なし、設定に基づく）
+bun run src/cli.ts commit-memory
+
+# カスタムメッセージでコミット & プッシュ
+bun run src/cli.ts commit-memory --message "feat: 課題を解決" --push
+```
+
+設定により、デフォルトで自動コミットや自動プッシュを有効にすることも可能です。

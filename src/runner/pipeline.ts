@@ -13,6 +13,7 @@ import {
 	type ScenarioInput,
 	type ScenarioResult,
 } from "../schemas";
+import { MemoryService } from "../services/memoryService";
 
 const scoreMinimality = (
 	scenario: ScenarioInput,
@@ -65,17 +66,20 @@ export const runPipeline = async (
 ): Promise<ScenarioResult> => {
 	const startedAt = Date.now();
 	const workspaceRoot = resolve(config.workspaceRoot);
+	const memory = new MemoryService(config);
+
+	let memoryContext: string | undefined;
+	if (config.adapters.memory.enabled) {
+		memoryContext = await memory.recall(scenario.instruction);
+	}
 
 	let generate: ScenarioResult["generate"];
 	try {
-		generate = await generateWithLocalLlm({ scenario, config });
+		generate = await generateWithLocalLlm({ scenario, config, memoryContext });
 	} catch (error) {
-		return errorResult(
-			scenario,
-			startedAt,
-			"generation",
-			`Generation failed: ${error instanceof Error ? error.message : String(error)}`,
-		);
+		const reason = `Generation failed: ${error instanceof Error ? error.message : String(error)}`;
+		await memory.recordFailure(scenario.id, reason);
+		return errorResult(scenario, startedAt, "generation", reason);
 	}
 
 	let apply: ScenarioResult["apply"];
@@ -86,13 +90,9 @@ export const runPipeline = async (
 			config,
 		});
 	} catch (error) {
-		return errorResult(
-			scenario,
-			startedAt,
-			"apply",
-			`Patch apply failed: ${error instanceof Error ? error.message : String(error)}`,
-			{ generate },
-		);
+		const reason = `Patch apply failed: ${error instanceof Error ? error.message : String(error)}`;
+		await memory.recordFailure(scenario.id, reason);
+		return errorResult(scenario, startedAt, "apply", reason, { generate });
 	}
 
 	let risk: ScenarioResult["risk"];
@@ -104,13 +104,12 @@ export const runPipeline = async (
 			sourceFiles: scenario.targetFiles,
 		});
 	} catch (error) {
-		return errorResult(
-			scenario,
-			startedAt,
-			"review",
-			`Risk review failed: ${error instanceof Error ? error.message : String(error)}`,
-			{ generate, apply },
-		);
+		const reason = `Risk review failed: ${error instanceof Error ? error.message : String(error)}`;
+		await memory.recordFailure(scenario.id, reason);
+		return errorResult(scenario, startedAt, "review", reason, {
+			generate,
+			apply,
+		});
 	}
 
 	const syntaxJudge = await runSyntaxJudge(config, workspaceRoot).catch(
