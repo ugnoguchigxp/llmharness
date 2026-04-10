@@ -1,0 +1,27 @@
+{
+	"name": "llmharness",
+	"module": "src/index.ts",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"llmharness": "bun run src/cli.ts",
+		"run": "bun run src/cli.ts run --scenario smoke-001",
+		"eval": "bun run src/cli.ts eval --suite smoke",
+		"report": "bun run src/cli.ts report --latest",
+		"doctor": "bun run src/cli.ts doctor",
+		"lint": "biome check .",
+		"lint:fix": "biome check . --write",
+		"format": "biome format . --write",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test",
+		"smoke": "bun run src/cli.ts run --scenario smoke-001"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.11",
+		"@types/bun": "latest",
+		"typescript": "^6.0.2"
+	},
+	"dependencies": {
+		"zod": "^4.3.6"
+	}
+}

@@ -1,0 +1,42 @@
+{
+	"runtime": "bun",
+	"workspaceRoot": ".",
+	"artifactsDir": "artifacts/runs",
+	"adapters": {
+		"localLlm": {
+			"mode": "api",
+			"apiBaseUrl": "http://localhost:8000",
+			"apiPath": "/v1/chat/completions",
+			"apiKeyEnv": "LOCAL_LLM_API_KEY",
+			"model": "gemma4-default",
+			"timeoutMs": 30000,
+			"temperature": 0
+		},
+		"astmend": {
+			"mode": "api",
+			"endpoint": "http://localhost:8100",
+			"apiPath": "/apply",
+			"timeoutMs": 15000
+		},
+		"diffGuard": {
+			"mode": "api",
+			"endpoint": "http://localhost:8200",
+			"apiPath": "/review",
+			"timeoutMs": 15000
+		}
+	},
+	"checks": {
+		"runTypecheck": true,
+		"typecheckCommand": "bun run typecheck",
+		"runTests": true,
+		"testCommand": "bun test"
+	},
+	"scoring": {
+		"syntaxWeight": 30,
+		"testWeight": 30,
+		"riskWeight": 20,
+		"minimalityWeight": 10,
+		"instructionWeight": 10,
+		"passThreshold": 80
+	}
+}

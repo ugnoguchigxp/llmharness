@@ -1,0 +1,42 @@
+{
+	"runtime": "bun",
+	"workspaceRoot": ".",
+	"artifactsDir": "artifacts/runs",
+	"adapters": {
+		"localLlm": {
+			"mode": "cli",
+			"command": "localLlm --prompt {{prompt}}",
+			"commandPromptMode": "arg",
+			"commandPromptPlaceholder": "{{prompt}}",
+			"model": "gemma4-default",
+			"timeoutMs": 180000,
+			"temperature": 0
+		},
+		"astmend": {
+			"mode": "cli",
+			"command": "astmend apply --json",
+			"enableLibFallback": true,
+			"libEntrypoint": "../Astmend/dist/index.js",
+			"timeoutMs": 15000
+		},
+		"diffGuard": {
+			"mode": "cli",
+			"command": "diffguard --format json",
+			"timeoutMs": 15000
+		}
+	},
+	"checks": {
+		"runTypecheck": true,
+		"typecheckCommand": "bun run typecheck",
+		"runTests": true,
+		"testCommand": "bun test"
+	},
+	"scoring": {
+		"syntaxWeight": 30,
+		"testWeight": 30,
+		"riskWeight": 20,
+		"minimalityWeight": 10,
+		"instructionWeight": 10,
+		"passThreshold": 80
+	}
+}

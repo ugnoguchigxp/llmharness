@@ -1,0 +1,98 @@
+import { z } from "zod";
+
+export const AdapterModeSchema = z.enum(["api", "cli"]);
+export const PromptModeSchema = z.enum(["stdin", "arg"]);
+
+export const LocalLlmConfigSchema = z
+	.object({
+		mode: AdapterModeSchema.default("cli"),
+		apiBaseUrl: z.string().url().optional(),
+		apiPath: z.string().min(1).default("/v1/chat/completions"),
+		apiKeyEnv: z.string().min(1).default("LOCAL_LLM_API_KEY"),
+		command: z.string().min(1).default("localLlm --json"),
+		commandPromptMode: PromptModeSchema.default("stdin"),
+		commandPromptPlaceholder: z.string().min(1).default("{{prompt}}"),
+		model: z.string().min(1),
+		timeoutMs: z.number().int().positive().default(30000),
+		temperature: z.number().min(0).max(2).default(0),
+	})
+	.strict();
+
+export const AstmendConfigSchema = z
+	.object({
+		mode: AdapterModeSchema.default("cli"),
+		endpoint: z.string().url().optional(),
+		apiPath: z.string().min(1).default("/apply"),
+		command: z.string().min(1).default("astmend apply --json"),
+		enableLibFallback: z.boolean().default(true),
+		libEntrypoint: z.string().min(1).default("../Astmend/dist/index.js"),
+		timeoutMs: z.number().int().positive().default(15000),
+	})
+	.strict();
+
+export const DiffGuardConfigSchema = z
+	.object({
+		mode: AdapterModeSchema.default("cli"),
+		endpoint: z.string().url().optional(),
+		apiPath: z.string().min(1).default("/review"),
+		command: z.string().min(1).default("diffguard --format json"),
+		timeoutMs: z.number().int().positive().default(15000),
+	})
+	.strict();
+
+export const HarnessChecksConfigSchema = z
+	.object({
+		runTypecheck: z.boolean().default(true),
+		typecheckCommand: z.string().min(1).default("bun run typecheck"),
+		runTests: z.boolean().default(true),
+		testCommand: z.string().min(1).default("bun test"),
+	})
+	.strict();
+
+export const HarnessScoringConfigSchema = z
+	.object({
+		syntaxWeight: z.number().int().nonnegative().default(30),
+		testWeight: z.number().int().nonnegative().default(30),
+		riskWeight: z.number().int().nonnegative().default(20),
+		minimalityWeight: z.number().int().nonnegative().default(10),
+		instructionWeight: z.number().int().nonnegative().default(10),
+		passThreshold: z.number().min(0).max(100).default(80),
+	})
+	.strict();
+
+export const HarnessConfigSchema = z
+	.object({
+		runtime: z.literal("bun"),
+		workspaceRoot: z.string().min(1),
+		artifactsDir: z.string().min(1).default("artifacts/runs"),
+		adapters: z
+			.object({
+				localLlm: LocalLlmConfigSchema,
+				astmend: AstmendConfigSchema,
+				diffGuard: DiffGuardConfigSchema,
+			})
+			.strict(),
+		checks: HarnessChecksConfigSchema.default({
+			runTypecheck: true,
+			typecheckCommand: "bun run typecheck",
+			runTests: true,
+			testCommand: "bun test",
+		}),
+		scoring: HarnessScoringConfigSchema.default({
+			syntaxWeight: 30,
+			testWeight: 30,
+			riskWeight: 20,
+			minimalityWeight: 10,
+			instructionWeight: 10,
+			passThreshold: 80,
+		}),
+	})
+	.strict();
+
+export type AdapterMode = z.infer<typeof AdapterModeSchema>;
+export type LocalLlmConfig = z.infer<typeof LocalLlmConfigSchema>;
+export type AstmendConfig = z.infer<typeof AstmendConfigSchema>;
+export type DiffGuardConfig = z.infer<typeof DiffGuardConfigSchema>;
+export type HarnessChecksConfig = z.infer<typeof HarnessChecksConfigSchema>;
+export type HarnessScoringConfig = z.infer<typeof HarnessScoringConfigSchema>;
+export type HarnessConfig = z.infer<typeof HarnessConfigSchema>;

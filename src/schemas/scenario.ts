@@ -1,0 +1,34 @@
+import { z } from "zod";
+
+export const ScenarioSuiteSchema = z.enum([
+	"smoke",
+	"regression",
+	"edge-cases",
+]);
+
+export const ScenarioExpectedSchema = z
+	.object({
+		mustPassTests: z.array(z.string().min(1)).default([]),
+		maxRiskErrors: z.number().int().nonnegative().default(0),
+		minScore: z.number().min(0).max(100).default(80),
+	})
+	.strict();
+
+export const ScenarioInputSchema = z
+	.object({
+		id: z.string().min(1),
+		suite: ScenarioSuiteSchema,
+		title: z.string().min(1),
+		instruction: z.string().min(1),
+		targetFiles: z.array(z.string().min(1)).min(1),
+		expected: ScenarioExpectedSchema.default({
+			mustPassTests: [],
+			maxRiskErrors: 0,
+			minScore: 80,
+		}),
+	})
+	.strict();
+
+export type ScenarioSuite = z.infer<typeof ScenarioSuiteSchema>;
+export type ScenarioExpected = z.infer<typeof ScenarioExpectedSchema>;
+export type ScenarioInput = z.infer<typeof ScenarioInputSchema>;

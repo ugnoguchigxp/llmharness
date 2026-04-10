@@ -1,0 +1,56 @@
+# Dependencies (bun install)
+node_modules/
+bun-debug.log*
+
+# Output and Build
+dist/
+out/
+artifacts/
+reports/
+*.tgz
+*.tsbuildinfo
+
+# Code Coverage
+coverage/
+*.lcov
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Environment Variables and Local Config
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.local
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# AI Tools (Cursor, etc.)
+.cursor/*
+!.cursor/rules/
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+ActiveScan.txt

@@ -1,0 +1,12 @@
+{
+	"id": "smoke-001",
+	"suite": "smoke",
+	"title": "Basic harness flow",
+	"instruction": "Produce a minimal safe patch for a simple scenario.",
+	"targetFiles": ["src/index.ts"],
+	"expected": {
+		"mustPassTests": [],
+		"maxRiskErrors": 0,
+		"minScore": 80
+	}
+}
