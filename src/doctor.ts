@@ -1,7 +1,7 @@
-import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { HarnessConfig } from "./schemas";
 import { runCommand } from "./utils/exec";
+import { exists, listJsonFilesRecursive, readJsonFile } from "./utils/fs";
 
 export type HealthStatus = "ok" | "warn" | "error";
 
@@ -68,15 +68,6 @@ const checkApi = (
 	}
 };
 
-const exists = async (path: string): Promise<boolean> => {
-	try {
-		await stat(path);
-		return true;
-	} catch {
-		return false;
-	}
-};
-
 const checkLocalLlmApiKey = (config: HarnessConfig): HealthItem => {
 	if (config.adapters.localLlm.mode !== "api") {
 		return {
@@ -101,6 +92,80 @@ const checkLocalLlmApiKey = (config: HarnessConfig): HealthItem => {
 		status: "warn",
 		message: `env ${envName} is not set`,
 	};
+};
+
+const checkRequirementsFiles = async (
+	workspaceRoot: string,
+): Promise<HealthItem[]> => {
+	const scenariosRoot = resolve(workspaceRoot, "scenarios");
+	const items: HealthItem[] = [];
+
+	let scenarioFiles: string[] = [];
+	try {
+		scenarioFiles = await listJsonFilesRecursive(scenariosRoot);
+	} catch {
+		items.push({
+			name: "requirements.scenariosDir",
+			status: "warn",
+			message: `Could not scan scenarios directory: ${scenariosRoot}`,
+		});
+		return items;
+	}
+
+	let withPath = 0;
+	let missingCount = 0;
+	let conventionCount = 0;
+
+	for (const filePath of scenarioFiles) {
+		let raw: unknown;
+		try {
+			raw = await readJsonFile(filePath);
+		} catch {
+			continue;
+		}
+
+		const scenarioRaw = raw as Record<string, unknown>;
+		const scenarioId =
+			typeof scenarioRaw.id === "string" ? scenarioRaw.id : null;
+		const requirementsPath =
+			typeof scenarioRaw.requirementsPath === "string"
+				? scenarioRaw.requirementsPath
+				: null;
+
+		if (requirementsPath) {
+			withPath++;
+			const resolved = resolve(workspaceRoot, requirementsPath);
+			if (!(await exists(resolved))) {
+				missingCount++;
+				items.push({
+					name: `requirements.${scenarioId ?? "unknown"}`,
+					status: "error",
+					message: `requirementsPath not found: ${requirementsPath}`,
+				});
+			}
+		} else if (scenarioId) {
+			const conventionPath = `requirements/${scenarioId}.requirements.json`;
+			if (await exists(resolve(workspaceRoot, conventionPath))) {
+				conventionCount++;
+			}
+		}
+	}
+
+	if (missingCount === 0) {
+		const detail =
+			withPath > 0
+				? `${withPath} explicit path(s) all found; ${conventionCount} convention file(s) detected`
+				: conventionCount > 0
+					? `${conventionCount} convention requirements file(s) found (no explicit requirementsPath)`
+					: "no requirements files configured or found";
+		items.push({
+			name: "requirements.files",
+			status: "ok",
+			message: detail,
+		});
+	}
+
+	return items;
 };
 
 export const runDoctor = async (
@@ -192,6 +257,7 @@ export const runDoctor = async (
 	}
 
 	items.push(checkLocalLlmApiKey(config));
+	items.push(...(await checkRequirementsFiles(cwd)));
 	return items;
 };
 

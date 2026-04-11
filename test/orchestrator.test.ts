@@ -393,4 +393,48 @@ describe("orchestrator retry loop", () => {
 			await cleanupTempDir(runDir);
 		}
 	});
+
+	test("preserves requirementsSummary even when requirements content is unavailable", async () => {
+		const dir = await createTempDir("llmharness-orchestrator-summary-only");
+		try {
+			const patch = JSON.stringify({
+				type: "add_import",
+				file: "src/index.ts",
+				module: "./m1",
+				named: [{ name: "X1" }],
+			});
+			const local = await createLocalLlmScript(dir, {
+				patch,
+				summary: "summary test-001",
+			});
+			const astmend = await createAstmendScript(dir, {
+				success: true,
+				patchedFiles: ["src/index.ts"],
+				rejects: [],
+				diagnostics: [],
+				diff: "Index: src/index.ts\n+import { X1 } from './m1';\n",
+			});
+			const diffGuard = await createDiffGuardScript(dir, nonBlockingReview);
+
+			const result = await runPipeline(
+				scenario,
+				buildConfig(dir, local.path, astmend, diffGuard),
+				undefined,
+				undefined,
+				{
+					id: "requirements/missing.requirements.json",
+					title: "requirements/missing.requirements.json",
+					loaded: false,
+					validationStatus: "not_found",
+					successCriteriaCount: 0,
+					reviewPersonasCount: 0,
+				},
+			);
+
+			expect(result.requirementsSummary).toBeDefined();
+			expect(result.requirementsSummary?.validationStatus).toBe("not_found");
+		} finally {
+			await cleanupTempDir(dir);
+		}
+	});
 });

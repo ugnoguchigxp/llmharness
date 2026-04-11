@@ -1,0 +1,261 @@
+# Tier 2-7: シナリオ自動生成パイプライン
+
+## 背景と目的
+
+現在のシナリオは手動で JSON を書くか、`generate-scenario` コマンドで requirements から scaffold する方法しかない。
+実際の Git 履歴（過去の PR / コミット）には「既知の正解パッチ」が大量に存在し、これを活用すれば:
+
+- LLM の修正精度を過去の実績と比較する回帰テストが自動で作れる
+- シナリオのカバレッジを手動作業なしで大幅に拡大できる
+- 「この変更を LLM は再現できるか？」という再現性テストが可能になる
+
+本計画では、Git diff からシナリオ + requirements を自動生成するパイプラインを構築する。
+
+## ゴール
+
+- Git の commit / PR diff から scenario JSON と requirements JSON を自動生成する
+- 生成されたシナリオで eval を実行し、LLM の再現精度を測定する
+- 「正解パッチ」との diff 比較による新しい Judge を追加する
+- バッチ生成（直近 N コミットから一括生成）をサポートする
+
+## 設計
+
+### 全体フロー
+
+```
+git log / git diff
+    ↓
+DiffAnalyzer（変更内容の分析）
+    ↓
+ScenarioGenerator（シナリオ JSON 生成）
+    ↓
+RequirementsGenerator（requirements JSON 生成）
+    ↓
+GoldenPatchStore（正解パッチの保存）
+    ↓
+eval 実行 → 正解パッチとの比較
+```
+
+### Diff 分析: `src/generators/diffAnalyzer.ts`
+
+```ts
+export type DiffAnalysis = {
+  commitHash: string;
+  commitMessage: string;
+  author: string;
+  date: string;
+  files: DiffFile[];
+  totalAdditions: number;
+  totalDeletions: number;
+  complexity: "trivial" | "simple" | "moderate" | "complex";
+  category: "bugfix" | "feature" | "refactor" | "test" | "docs" | "other";
+};
+
+export type DiffFile = {
+  path: string;
+  additions: number;
+  deletions: number;
+  isNew: boolean;
+  isDeleted: boolean;
+  isRenamed: boolean;
+};
+
+export const analyzeDiff = async (
+  commitHash: string,
+  workspaceRoot: string,
+): Promise<DiffAnalysis> => { ... };
+```
+
+#### 複雑度の判定
+
+| 複雑度 | 条件 |
+|--------|------|
+| `trivial` | 1ファイル、変更行数 ≤ 5 |
+| `simple` | 1-2ファイル、変更行数 ≤ 30 |
+| `moderate` | 2-5ファイル、変更行数 ≤ 100 |
+| `complex` | それ以上 |
+
+#### カテゴリの推定
+
+コミットメッセージの prefix（`fix:`, `feat:`, `refactor:` 等）と変更内容から推定。
+
+### シナリオ生成: `src/generators/scenarioGenerator.ts`
+
+```ts
+export type GenerateScenarioFromDiffInput = {
+  diff: DiffAnalysis;
+  workspaceRoot: string;
+  suite: ScenarioSuite;
+  goldenPatchPath?: string;
+};
+
+export const generateScenarioFromDiff = (
+  input: GenerateScenarioFromDiffInput,
+): ScenarioInput => {
+  return {
+    id: `auto-${input.diff.commitHash.slice(0, 8)}`,
+    suite: input.suite,
+    title: input.diff.commitMessage,
+    instruction: buildInstructionFromDiff(input.diff),
+    targetFiles: input.diff.files
+      .filter(f => !f.isDeleted)
+      .map(f => f.path),
+    expected: {
+      mustPassTests: [],
+      maxRiskErrors: 0,
+      minScore: complexityToMinScore(input.diff.complexity),
+    },
+    goldenPatchPath: input.goldenPatchPath,
+  };
+};
+```
+
+#### instruction の構築
+
+コミットメッセージと変更前のコードコンテキストから instruction を構築:
+
+```
+The following files need to be modified: {files}
+
+Commit message: {commitMessage}
+
+Context (before change):
+--- {file1} ---
+{content before change}
+
+Task: Apply the change described in the commit message.
+```
+
+### Requirements 生成: `src/generators/requirementsGenerator.ts`
+
+```ts
+export const generateRequirementsFromDiff = (
+  diff: DiffAnalysis,
+): Requirements => ({
+  id: `auto-${diff.commitHash.slice(0, 8)}-req`,
+  title: diff.commitMessage,
+  task: `Reproduce the change: ${diff.commitMessage}`,
+  constraints: [
+    `Modify only: ${diff.files.map(f => f.path).join(", ")}`,
+    `Changes should be ${diff.complexity} in complexity`,
+  ],
+  successCriteria: buildSuccessCriteria(diff),
+  reviewPersonas: [],
+});
+```
+
+### 正解パッチストア: `src/generators/goldenPatchStore.ts`
+
+```ts
+export const saveGoldenPatch = async (
+  commitHash: string,
+  workspaceRoot: string,
+  outputDir: string,
+): Promise<string> => {
+  const diff = await runCommand(
+    `git diff ${commitHash}^..${commitHash}`,
+    { cwd: workspaceRoot },
+  );
+  const patchPath = join(outputDir, `${commitHash.slice(0, 8)}.patch`);
+  await writeTextFile(patchPath, diff.stdout);
+  return patchPath;
+};
+```
+
+### 正解比較 Judge: `src/judges/goldenPatchJudge.ts`
+
+LLM が生成したパッチと正解パッチを比較する新しい Judge。
+
+```ts
+export type GoldenComparisonResult = {
+  semanticSimilarity: number;  // 0-1: 変更内容の意味的類似度
+  fileOverlap: number;         // 0-1: 変更ファイルの一致率
+  lineOverlap: number;         // 0-1: 変更行の一致率
+};
+
+export const runGoldenPatchJudge = async (
+  generatedPatch: string,
+  goldenPatchPath: string,
+  config: HarnessConfig,
+): Promise<JudgeResult> => { ... };
+```
+
+比較手法:
+1. **ファイルレベル**: 変更対象ファイルの集合の Jaccard 係数
+2. **行レベル**: 追加行・削除行の Jaccard 係数
+3. **セマンティック**: LLM-as-Judge（Tier 1-2）を使い、「同じ意図の変更か」を判定
+
+### CLI 統合
+
+```bash
+# 単一コミットからシナリオ生成
+bun run src/cli.ts generate-from-git --commit abc1234 --suite regression
+
+# 直近 N コミットからバッチ生成
+bun run src/cli.ts generate-from-git --last 10 --suite regression
+
+# 生成 + 即時 eval
+bun run src/cli.ts generate-from-git --last 5 --suite regression --eval
+
+# フィルタ: bugfix のみ
+bun run src/cli.ts generate-from-git --last 20 --category bugfix --suite regression
+```
+
+### フィルタリング
+
+全コミットがシナリオに適しているわけではない。以下を除外:
+- マージコミット
+- ドキュメントのみの変更（`.md` のみ）
+- 設定ファイルのみの変更（`.json`, `.yaml` のみ、`scenarios/` 配下を除く）
+- 変更行数が 200 行を超える複雑な変更（optional、config で閾値設定）
+
+### Scenario スキーマ拡張
+
+```ts
+// schemas/scenario.ts に追加
+goldenPatchPath: z.string().optional(),
+sourceCommit: z.string().optional(),
+autoGenerated: z.boolean().default(false),
+```
+
+## 変更対象ファイル
+
+| ファイル | 変更内容 |
+|----------|----------|
+| `src/generators/diffAnalyzer.ts` | 新規: Git diff の分析 |
+| `src/generators/scenarioGenerator.ts` | 新規: diff → scenario 変換 |
+| `src/generators/requirementsGenerator.ts` | 新規: diff → requirements 変換 |
+| `src/generators/goldenPatchStore.ts` | 新規: 正解パッチの保存 |
+| `src/judges/goldenPatchJudge.ts` | 新規: 正解パッチとの比較判定 |
+| `src/runner/pipeline.ts` | golden patch judge の統合 |
+| `src/cli.ts` | `generate-from-git` サブコマンド追加 |
+| `src/schemas/scenario.ts` | `goldenPatchPath` 等のフィールド追加 |
+| `src/schemas/domain.ts` | `JudgePhaseSchema` に `"golden"` 追加 |
+| `test/unit/generators/diffAnalyzer.test.ts` | 新規 |
+| `test/unit/generators/scenarioGenerator.test.ts` | 新規 |
+| `test/unit/judges/goldenPatchJudge.test.ts` | 新規 |
+
+## テスト計画
+
+1. `analyzeDiff` の単体テスト（`git diff` 出力のサンプルをフィクスチャとして使用）
+2. 複雑度・カテゴリ判定のテスト
+3. `generateScenarioFromDiff` の出力スキーマバリデーション
+4. `generateRequirementsFromDiff` の出力スキーマバリデーション
+5. フィルタリングロジックのテスト（マージコミット除外等）
+6. `goldenPatchJudge` のファイル・行レベル比較テスト
+
+## マイルストーン
+
+1. `diffAnalyzer.ts` の実装とテスト
+2. `scenarioGenerator.ts` + `requirementsGenerator.ts` の実装
+3. `goldenPatchStore.ts` の実装
+4. CLI `generate-from-git` コマンドの実装
+5. `goldenPatchJudge.ts` の実装
+6. `pipeline.ts` への golden judge 統合
+7. バッチ生成 + フィルタリング
+8. `--eval` フラグによる生成 + 即時実行
+
+## 依存関係
+
+- Tier 1-1（Unified Diff アダプター）: golden patch が Unified Diff 形式のため、先に実装が必要
+- Tier 1-2（LLM-as-Judge）: セマンティック比較に LLM judge を再利用（optional）

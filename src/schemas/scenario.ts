@@ -26,6 +26,7 @@ export const ScenarioInputSchema = z
 			maxRiskErrors: 0,
 			minScore: 80,
 		}),
+		requirementsPath: z.string().optional(),
 	})
 	.strict();
 

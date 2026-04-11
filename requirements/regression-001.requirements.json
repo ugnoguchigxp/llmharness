@@ -1,0 +1,46 @@
+{
+	"id": "regression-001-req",
+	"title": "Regression: orchestrator retry under apply failure",
+	"task": "Ensure the orchestrator correctly retries patch generation when the initial patch fails to apply, and that each retry incorporates feedback from the previous attempt.",
+	"audience": "Maintainers validating orchestrator retry logic after changes to pipeline.ts",
+	"constraints": [
+		"Retry count must not exceed maxAttempts from config",
+		"Each retry prompt must include rejection feedback from the previous attempt",
+		"Memory service must record failures on non-recoverable errors"
+	],
+	"successCriteria": [
+		"OrchestratorState.attempt increments on each retry",
+		"lastApplyRejects from attempt N is present in the feedback for attempt N+1",
+		"finalDecision reflects the outcome of the last attempt",
+		"No infinite loop: pipeline terminates within maxAttempts iterations"
+	],
+	"nonGoals": [
+		"Does not test the quality of patch generation",
+		"Does not assert specific patch content"
+	],
+	"risks": [
+		"Mock adapter timing may differ from real adapter behavior",
+		"Config changes to maxAttempts could invalidate test assumptions"
+	],
+	"reviewPersonas": [
+		{
+			"name": "Reliability Engineer",
+			"role": "Platform",
+			"focus": [
+				"retry semantics",
+				"feedback loop correctness",
+				"termination guarantee"
+			]
+		},
+		{
+			"name": "QA Lead",
+			"role": "Quality",
+			"focus": ["edge case coverage", "regression signal", "determinism"]
+		}
+	],
+	"metadata": {
+		"linkedScenario": "regression-001",
+		"tier": "regression",
+		"relatedModule": "pipeline.ts"
+	}
+}

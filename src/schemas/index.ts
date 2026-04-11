@@ -7,15 +7,19 @@ import {
 	GenerateResultSchema,
 	type JudgeResult,
 	JudgeResultSchema,
+	type PersonaReviewResult,
+	PersonaReviewResultSchema,
 	type RiskResult,
 	RiskResultSchema,
 	type ScenarioResult,
 	ScenarioResultSchema,
 } from "./domain";
+import { type Requirements, RequirementsSchema } from "./requirements";
 import { type ScenarioInput, ScenarioInputSchema } from "./scenario";
 
 export * from "./config";
 export * from "./domain";
+export * from "./requirements";
 export * from "./scenario";
 
 const formatIssuePath = (path: PropertyKey[]): string =>
@@ -58,3 +62,9 @@ export const parseJudgeResult = (input: unknown): JudgeResult =>
 
 export const parseScenarioResult = (input: unknown): ScenarioResult =>
 	safeParseOrThrow(ScenarioResultSchema, input, "ScenarioResult");
+
+export const parseRequirements = (input: unknown): Requirements =>
+	safeParseOrThrow(RequirementsSchema, input, "Requirements");
+
+export const parsePersonaReviewResult = (input: unknown): PersonaReviewResult =>
+	safeParseOrThrow(PersonaReviewResultSchema, input, "PersonaReviewResult");

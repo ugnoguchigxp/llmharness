@@ -2,9 +2,13 @@ import { join, resolve } from "node:path";
 import { applyWithAstmend } from "../adapters/astmend";
 import { reviewWithDiffGuard } from "../adapters/diffguard";
 import { type Feedback, generateWithLocalLlm } from "../adapters/localllm";
+import { reviewWithPersona } from "../adapters/personaReviewer";
 import { runBehaviorJudge } from "../judges/behaviorJudge";
+import { runRequirementsJudge } from "../judges/requirementsJudge";
 import { runRiskJudge } from "../judges/riskJudge";
 import { runSyntaxJudge } from "../judges/syntaxJudge";
+import type { RequirementsContext } from "../requirements/loadRequirements";
+import { generateRevisionSuggestions } from "../requirements/revisionSuggester";
 import {
 	type ApplyResult,
 	type AttemptResult,
@@ -16,6 +20,7 @@ import {
 	parseJudgeResult,
 	parseRiskResult,
 	parseScenarioResult,
+	type RequirementsSummary,
 	type RiskResult,
 	type ScenarioInput,
 	type ScenarioResult,
@@ -48,6 +53,7 @@ const errorResult = (
 	phase: JudgePhase,
 	reason: string,
 	partial?: Partial<ScenarioResult>,
+	requirementsSummary?: RequirementsSummary,
 ): ScenarioResult => {
 	return parseScenarioResult({
 		scenarioId: scenario.id,
@@ -67,6 +73,7 @@ const errorResult = (
 			}),
 		],
 		artifacts: partial?.artifacts ?? [],
+		requirementsSummary,
 	});
 };
 
@@ -122,10 +129,14 @@ export const runPipeline = async (
 	scenario: ScenarioInput,
 	config: HarnessConfig,
 	runDir?: string,
+	requirementsContext?: RequirementsContext,
+	requirementsSummaryInput?: RequirementsSummary,
 ): Promise<ScenarioResult> => {
 	const startedAt = Date.now();
 	const workspaceRoot = resolve(config.workspaceRoot);
 	const memory = new MemoryService(config);
+	const requirementsSummary =
+		requirementsSummaryInput ?? requirementsContext?.summary;
 
 	let memoryContext: string | undefined;
 	if (config.adapters.memory.enabled) {
@@ -164,14 +175,21 @@ export const runPipeline = async (
 		} catch (error) {
 			const reason = `Generation failed [attempt ${attemptIdx}]: ${error instanceof Error ? error.message : String(error)}`;
 			await memory.recordFailure(scenario.id, reason);
-			return errorResult(scenario, startedAt, "generation", reason, {
-				generate: finalGenerate,
-				apply: finalApply,
-				risk: finalRisk,
-				attempts,
-				orchestratorState,
-				artifacts,
-			});
+			return errorResult(
+				scenario,
+				startedAt,
+				"generation",
+				reason,
+				{
+					generate: finalGenerate,
+					apply: finalApply,
+					risk: finalRisk,
+					attempts,
+					orchestratorState,
+					artifacts,
+				},
+				requirementsSummary,
+			);
 		}
 
 		if (runDir) {
@@ -190,14 +208,21 @@ export const runPipeline = async (
 		} catch (error) {
 			const reason = `Patch apply failed [attempt ${attemptIdx}]: ${error instanceof Error ? error.message : String(error)}`;
 			await memory.recordFailure(scenario.id, reason);
-			return errorResult(scenario, startedAt, "apply", reason, {
-				generate,
-				apply: finalApply,
-				risk: finalRisk,
-				attempts,
-				orchestratorState,
-				artifacts,
-			});
+			return errorResult(
+				scenario,
+				startedAt,
+				"apply",
+				reason,
+				{
+					generate,
+					apply: finalApply,
+					risk: finalRisk,
+					attempts,
+					orchestratorState,
+					artifacts,
+				},
+				requirementsSummary,
+			);
 		}
 
 		let risk: RiskResult;
@@ -212,14 +237,21 @@ export const runPipeline = async (
 			} catch (error) {
 				const reason = `Risk review failed [attempt ${attemptIdx}]: ${error instanceof Error ? error.message : String(error)}`;
 				await memory.recordFailure(scenario.id, reason);
-				return errorResult(scenario, startedAt, "review", reason, {
-					generate,
-					apply,
-					risk: finalRisk,
-					attempts,
-					orchestratorState,
-					artifacts,
-				});
+				return errorResult(
+					scenario,
+					startedAt,
+					"review",
+					reason,
+					{
+						generate,
+						apply,
+						risk: finalRisk,
+						attempts,
+						orchestratorState,
+						artifacts,
+					},
+					requirementsSummary,
+				);
 			}
 		} else {
 			risk = buildSyntheticRiskForApplyFailure(apply.rejects.length);
@@ -368,6 +400,28 @@ export const runPipeline = async (
 		].join("\n");
 	}
 
+	const requirements = requirementsContext?.requirements;
+
+	const requirementsJudge = runRequirementsJudge(requirements, finalJudges);
+	const allJudges = [...finalJudges, requirementsJudge];
+
+	const personaReviews = await (async () => {
+		const personas = requirements?.reviewPersonas ?? [];
+		if (personas.length === 0 || !finalGenerate) return [];
+		const reviews = await Promise.allSettled(
+			personas.map((persona) =>
+				reviewWithPersona(persona, finalGenerate.patch, scenario.title, config),
+			),
+		);
+		return reviews.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+	})();
+
+	const revisionSuggestions = generateRevisionSuggestions(
+		requirements,
+		finalDecision,
+		allJudges,
+	);
+
 	return parseScenarioResult({
 		scenarioId: scenario.id,
 		durationMs: Date.now() - startedAt,
@@ -375,9 +429,12 @@ export const runPipeline = async (
 		generate: finalGenerate,
 		apply: finalApply,
 		risk: finalRisk,
-		judges: finalJudges,
+		judges: allJudges,
 		artifacts,
 		attempts,
 		orchestratorState,
+		requirementsSummary,
+		personaReviews,
+		revisionSuggestions,
 	});
 };
