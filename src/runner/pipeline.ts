@@ -5,6 +5,7 @@ import { applyPatch } from "../adapters/patchRouter";
 import { reviewWithPersona } from "../adapters/personaReviewer";
 import { collectContext } from "../context/contextCollector";
 import { runBehaviorJudge } from "../judges/behaviorJudge";
+import { runGoldenPatchJudge } from "../judges/goldenPatchJudge";
 import { runLlmRequirementsJudge } from "../judges/llmRequirementsJudge";
 import { runRequirementsJudge } from "../judges/requirementsJudge";
 import { runRiskJudge } from "../judges/riskJudge";
@@ -463,7 +464,29 @@ export const runPipeline = async (
 		finalJudges,
 		finalGenerate?.patch,
 	);
-	const allJudges = [...finalJudges, requirementsJudge];
+
+	const goldenJudge =
+		scenario.goldenPatchPath && finalGenerate
+			? await runGoldenPatchJudge(
+					finalGenerate.patch,
+					scenario.goldenPatchPath,
+				).catch((error) =>
+					parseJudgeResult({
+						phase: "golden",
+						score: 0,
+						pass: false,
+						reasons: [
+							`Golden patch judge failed: ${error instanceof Error ? error.message : String(error)}`,
+						],
+					}),
+				)
+			: null;
+
+	const allJudges = [
+		...finalJudges,
+		requirementsJudge,
+		...(goldenJudge ? [goldenJudge] : []),
+	];
 
 	const personaReviews = await (async () => {
 		const personas = requirements?.reviewPersonas ?? [];

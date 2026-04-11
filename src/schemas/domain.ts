@@ -69,6 +69,7 @@ export const JudgePhaseSchema = z.enum([
 	"review",
 	"test",
 	"requirements",
+	"golden",
 	"final",
 ]);
 
