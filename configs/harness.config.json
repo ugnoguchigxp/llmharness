@@ -25,6 +25,17 @@
 			"timeoutMs": 15000
 		}
 	},
+	"judges": {
+		"mode": "keyword",
+		"confidenceThreshold": 0.5,
+		"llm": {
+			"apiPath": "/v1/chat/completions",
+			"apiKeyEnv": "LOCAL_LLM_API_KEY",
+			"model": "gemma4-default",
+			"timeoutMs": 120000,
+			"temperature": 0
+		}
+	},
 	"checks": {
 		"runTypecheck": true,
 		"typecheckCommand": "bun run typecheck",

@@ -72,12 +72,22 @@ export const JudgePhaseSchema = z.enum([
 	"final",
 ]);
 
+export const CriterionEvaluationSchema = z
+	.object({
+		criterion: z.string().min(1),
+		pass: z.boolean(),
+		reasoning: z.string().min(1),
+		confidence: z.number().min(0).max(1),
+	})
+	.strict();
+
 export const JudgeResultSchema = z
 	.object({
 		phase: JudgePhaseSchema,
 		score: z.number().min(0).max(100),
 		pass: z.boolean(),
 		reasons: z.array(z.string()).min(1),
+		criterionEvaluations: z.array(CriterionEvaluationSchema).optional(),
 	})
 	.strict();
 
@@ -158,6 +168,7 @@ export type RiskLevel = z.infer<typeof RiskLevelSchema>;
 export type RiskFinding = z.infer<typeof RiskFindingSchema>;
 export type RiskResult = z.infer<typeof RiskResultSchema>;
 export type JudgePhase = z.infer<typeof JudgePhaseSchema>;
+export type CriterionEvaluation = z.infer<typeof CriterionEvaluationSchema>;
 export type JudgeResult = z.infer<typeof JudgeResultSchema>;
 export type Artifact = z.infer<typeof ArtifactSchema>;
 export type FinalDecision = z.infer<typeof FinalDecisionSchema>;

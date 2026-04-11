@@ -1,3 +1,5 @@
+import { cp, mkdir, symlink } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { loadHarnessConfig } from "../config/loadConfig";
 import { createRunPaths } from "../reporterPaths";
 import { writeJsonReport } from "../reporters/jsonReporter";
@@ -11,7 +13,13 @@ import {
 	loadScenarioById,
 	loadScenariosBySuite,
 } from "../scenarios/loadScenario";
-import type { RequirementsSummary, ScenarioSuite } from "../schemas";
+import type {
+	HarnessConfig,
+	RequirementsSummary,
+	ScenarioInput,
+	ScenarioSuite,
+} from "../schemas";
+import { exists } from "../utils/fs";
 import { runPipeline } from "./pipeline";
 
 const ALL_SUITES: ScenarioSuite[] = ["smoke", "regression", "edge-cases"];
@@ -22,15 +30,55 @@ export type ScenarioRunResult = {
 	requirementsSummary?: RequirementsSummary;
 };
 
-export const runSingleScenario = async (
-	scenarioId: string,
-	configPath?: string,
-	requirementsPathOverride?: string,
-): Promise<string> => {
-	const config = await loadHarnessConfig(configPath);
-	const scenario = await loadScenarioById(scenarioId);
-	const paths = await createRunPaths(config.artifactsDir);
+const isWithinDirectory = (root: string, path: string): boolean =>
+	path === root || path.startsWith(`${root}/`);
 
+const copyWorkspaceForSuiteRun = async (
+	sourceWorkspaceRoot: string,
+	destinationWorkspaceRoot: string,
+	artifactsDir: string,
+): Promise<void> => {
+	const sourceRoot = resolve(sourceWorkspaceRoot);
+	const destinationRoot = resolve(destinationWorkspaceRoot);
+	const artifactsRoot = resolve(artifactsDir);
+	const gitRoot = resolve(sourceRoot, ".git");
+	const nodeModulesSource = resolve(sourceRoot, "node_modules");
+	const nodeModulesDestination = resolve(destinationRoot, "node_modules");
+	const excludeArtifacts = isWithinDirectory(sourceRoot, artifactsRoot);
+
+	await mkdir(destinationRoot, { recursive: true });
+	await cp(sourceRoot, destinationRoot, {
+		recursive: true,
+		force: true,
+		filter: (src) => {
+			const absolute = resolve(String(src));
+			if (isWithinDirectory(destinationRoot, absolute)) return false;
+			if (isWithinDirectory(gitRoot, absolute)) return false;
+			if (isWithinDirectory(nodeModulesSource, absolute)) return false;
+			if (excludeArtifacts && isWithinDirectory(artifactsRoot, absolute))
+				return false;
+			return true;
+		},
+	});
+
+	if (await exists(nodeModulesSource)) {
+		try {
+			await symlink(nodeModulesSource, nodeModulesDestination, "dir");
+		} catch {
+			await cp(nodeModulesSource, nodeModulesDestination, {
+				recursive: true,
+				force: true,
+			});
+		}
+	}
+};
+
+const runScenarioAndWriteReports = async (
+	scenario: ScenarioInput,
+	config: HarnessConfig,
+	runDir: string,
+	requirementsPathOverride?: string,
+): Promise<RequirementsSummary | undefined> => {
 	const effectivePath = requirementsPathOverride ?? scenario.requirementsPath;
 	const reqResult = await resolveAndLoadRequirements(
 		scenario.id,
@@ -41,24 +89,62 @@ export const runSingleScenario = async (
 	const result = await runPipeline(
 		scenario,
 		config,
-		paths.runDir,
+		runDir,
 		requirementsContext,
 		reqResult?.summary,
 	);
-
+	const reportJsonPath = join(runDir, "result.json");
+	const reportMarkdownPath = join(runDir, "result.md");
+	const reportSarifPath = join(runDir, "result.sarif.json");
 	result.artifacts.push(
-		{ kind: "report", path: paths.reportJsonPath },
-		{ kind: "report", path: paths.reportMarkdownPath },
-		{ kind: "report", path: paths.reportSarifPath },
+		{ kind: "report", path: reportJsonPath },
+		{ kind: "report", path: reportMarkdownPath },
+		{ kind: "report", path: reportSarifPath },
 	);
 
-	await writeJsonReport(paths.reportJsonPath, result);
+	await writeJsonReport(reportJsonPath, result);
 	await writeMarkdownReport(
-		paths.reportMarkdownPath,
+		reportMarkdownPath,
 		result,
 		requirementsContext?.requirements,
 	);
-	await writeSarifReport(paths.reportSarifPath, result);
+	await writeSarifReport(reportSarifPath, result);
+
+	return result.requirementsSummary;
+};
+
+const prepareSuiteScenarioConfig = async (
+	config: HarnessConfig,
+	runDir: string,
+	isolated: boolean,
+): Promise<HarnessConfig> => {
+	if (!isolated) return config;
+	const isolatedWorkspaceRoot = resolve(runDir, "workspace");
+	await copyWorkspaceForSuiteRun(
+		config.workspaceRoot,
+		isolatedWorkspaceRoot,
+		config.artifactsDir,
+	);
+	return {
+		...config,
+		workspaceRoot: isolatedWorkspaceRoot,
+	};
+};
+
+export const runSingleScenario = async (
+	scenarioId: string,
+	configPath?: string,
+	requirementsPathOverride?: string,
+): Promise<string> => {
+	const config = await loadHarnessConfig(configPath);
+	const scenario = await loadScenarioById(scenarioId);
+	const paths = await createRunPaths(config.artifactsDir);
+	await runScenarioAndWriteReports(
+		scenario,
+		config,
+		paths.runDir,
+		requirementsPathOverride,
+	);
 
 	return paths.runDir;
 };
@@ -69,44 +155,56 @@ export const runSuite = async (
 ): Promise<ScenarioRunResult[]> => {
 	const config = await loadHarnessConfig(configPath);
 	const scenarios = await loadScenariosBySuite(suite);
-	const results: ScenarioRunResult[] = [];
-
-	for (const scenario of scenarios) {
+	const results: ScenarioRunResult[] = new Array(scenarios.length);
+	const suiteConcurrency = Math.max(1, config.orchestrator.suiteConcurrency);
+	const runScenario = async (
+		scenario: ScenarioInput,
+		isolated: boolean,
+	): Promise<ScenarioRunResult> => {
 		const paths = await createRunPaths(config.artifactsDir);
-
-		const reqResult = await resolveAndLoadRequirements(
-			scenario.id,
-			scenario.requirementsPath,
-		);
-		const requirementsContext = toRequirementsContext(reqResult);
-
-		const result = await runPipeline(
-			scenario,
+		const scenarioConfig = await prepareSuiteScenarioConfig(
 			config,
 			paths.runDir,
-			requirementsContext,
-			reqResult?.summary,
+			isolated,
 		);
-		result.artifacts.push(
-			{ kind: "report", path: paths.reportJsonPath },
-			{ kind: "report", path: paths.reportMarkdownPath },
-			{ kind: "report", path: paths.reportSarifPath },
+		const requirementsSummary = await runScenarioAndWriteReports(
+			scenario,
+			scenarioConfig,
+			paths.runDir,
 		);
-
-		await writeJsonReport(paths.reportJsonPath, result);
-		await writeMarkdownReport(
-			paths.reportMarkdownPath,
-			result,
-			requirementsContext?.requirements,
-		);
-		await writeSarifReport(paths.reportSarifPath, result);
-
-		results.push({
+		return {
 			runDir: paths.runDir,
 			scenarioId: scenario.id,
-			requirementsSummary: result.requirementsSummary,
-		});
+			requirementsSummary,
+		};
+	};
+
+	if (suiteConcurrency === 1) {
+		for (const [index, scenario] of scenarios.entries()) {
+			results[index] = await runScenario(scenario, false);
+		}
+		return results;
 	}
+
+	let nextIndex = 0;
+	const workers = Array.from(
+		{ length: Math.min(suiteConcurrency, scenarios.length) },
+		() =>
+			(async () => {
+				while (true) {
+					const currentIndex = nextIndex++;
+					if (currentIndex >= scenarios.length) {
+						return;
+					}
+					const scenario = scenarios[currentIndex];
+					if (!scenario) {
+						return;
+					}
+					results[currentIndex] = await runScenario(scenario, true);
+				}
+			})(),
+	);
+	await Promise.all(workers);
 
 	return results;
 };

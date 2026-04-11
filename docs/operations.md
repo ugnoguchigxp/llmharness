@@ -52,7 +52,8 @@ The smoke job executes `bun run smoke:eval -- --config configs/harness.config.js
 `configs/harness.config.json` includes the following sections:
 
 - `adapters`: configuration for `localLlm`, `astmend`, `diffGuard`, and `memory`.
-- `orchestrator`: `maxAttempts` (default 3), maximum retry attempts for one scenario.
+- `orchestrator`: `maxAttempts` (default 3), maximum retry attempts for one scenario. `suiteConcurrency` controls parallel scenario execution for `eval --suite`.
+- `judges`: requirements judge mode (`keyword | llm | hybrid`) and LLM thresholds/timeouts.
 - `checks`: which static analysis or tests to run.
 - `scoring`: weights for each judge phase.
 

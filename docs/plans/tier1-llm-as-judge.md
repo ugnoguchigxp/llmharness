@@ -9,149 +9,169 @@
 - キーワードが3文字以下だと全て無視される（`extractKeywords` の `w.length > 3` フィルタ）
 - 成功基準の意図と出力の意味的な一致を評価できない
 
-本計画では、LLM を judge として使い、成功基準への適合度をセマンティックに評価する。
+本実装では、LLM を judge として使い、成功基準への適合度をセマンティックに評価する。
 
-## ゴール
-
-- `successCriteria` の各項目に対して、LLM がパッチ内容と judge 出力を見て pass/fail を判定する
-- 既存のキーワードマッチング方式をフォールバックとして残す（LLM 接続不可時）
-- 判定の根拠（reasoning）をレポートに含める
-
-## 設計
-
-### 新規 Judge: `src/judges/llmRequirementsJudge.ts`
-
-```ts
-export type LlmJudgeInput = {
-  successCriteria: string[];
-  patch: string;
-  judgeReasons: string[];
-  config: HarnessConfig;
-};
-
-export type CriterionEvaluation = {
-  criterion: string;
-  pass: boolean;
-  reasoning: string;
-  confidence: number;
-};
-
-export const runLlmRequirementsJudge = async (
-  input: LlmJudgeInput,
-): Promise<JudgeResult> => { ... };
-```
-
-### LLM プロンプト設計
-
-```
-You are a code review judge. Evaluate whether a code patch satisfies each success criterion.
-
-## Patch
-{patch}
-
-## Pipeline Judge Output
-{judge reasons joined}
-
-## Success Criteria
-1. {criterion1}
-2. {criterion2}
-...
-
-For each criterion, respond with a JSON array:
-[
-  {
-    "criterion": "...",
-    "pass": true/false,
-    "reasoning": "...",
-    "confidence": 0.0-1.0
-  }
-]
-```
-
-### LLM 呼び出し
-
-既存の `localLlm` アダプターと同じ設定（`config.adapters.localLlm`）を再利用する。
-新たに `judges` セクションを config に追加し、judge 用のモデル・temperature を独立させる。
-
-```ts
-// schemas/config.ts への追加
-export const JudgeConfigSchema = z.object({
-  mode: z.enum(["keyword", "llm", "hybrid"]).default("keyword"),
-  llmModel: z.string().optional(),
-  llmTemperature: z.number().min(0).max(2).default(0),
-  llmTimeoutMs: z.number().int().positive().default(30000),
-  confidenceThreshold: z.number().min(0).max(1).default(0.6),
-}).strict();
-```
+## 実装済みの内容
 
 ### モード
 
 | モード | 挙動 |
 |--------|------|
 | `keyword` | 既存のキーワードマッチング（デフォルト、後方互換） |
-| `llm` | LLM による判定のみ |
-| `hybrid` | LLM 判定を実行し、失敗時はキーワードマッチングにフォールバック |
+| `llm` | LLM による判定のみ（失敗時は fail を返す） |
+| `hybrid` | LLM 判定を試み、失敗時はキーワードマッチングにフォールバック |
 
-### pipeline.ts での統合
+### 新規ファイル
 
-```ts
-// 現在
-const requirementsJudge = runRequirementsJudge(requirements, finalJudges);
+#### `src/judges/llmRequirementsJudge.ts`
 
-// 変更後
-const requirementsJudge = config.judges?.mode === "keyword"
-  ? runRequirementsJudge(requirements, finalJudges)
-  : await runLlmRequirementsJudge({
-      successCriteria: requirements.successCriteria ?? [],
-      patch: finalGenerate?.patch ?? "",
-      judgeReasons: finalJudges.flatMap(j => j.reasons),
-      config,
-    }).catch(() => runRequirementsJudge(requirements, finalJudges));
-```
+- `runLlmRequirementsJudge(requirements, judges, patch, config)` — LLM ベースの requirements 判定
+- OpenAI 互換 API (`/v1/chat/completions`) を呼び出す
+- requirements が無い・successCriteria が0件の場合は即座に pass を返す（fail-safe）
+- LLM レスポンスを `CriterionEvaluation[]` にパース。confidence が閾値未満の項目は fail 扱い
+- 評価できない基準は `"No evaluation returned by LLM"` でフォールバック
 
-### レポートへの反映
+### スキーマ変更
 
-`CriterionEvaluation` の `reasoning` を `JudgeResult.reasons` に含める:
-
-```
-[pass] "Artifacts are created" — reasoning: result.json and result.md are written to artifacts dir (confidence: 0.95)
-[fail] "Patch must not introduce regressions" — reasoning: No test execution evidence found in output (confidence: 0.7)
-```
-
-### ScenarioResult スキーマ拡張
-
-`JudgeResultSchema` に optional フィールドを追加:
+#### `src/schemas/config.ts`
 
 ```ts
-criterionEvaluations: z.array(CriterionEvaluationSchema).optional()
+JudgeLlmConfigSchema {
+  apiBaseUrl?: string      // 例: "http://localhost:8080", "https://api.groq.com/openai"
+  apiPath: string          // default: "/v1/chat/completions"
+  apiKeyEnv: string        // default: "LOCAL_LLM_API_KEY"
+  model: string            // default: "default"
+  timeoutMs: number        // default: 60000
+  temperature: number      // default: 0
+}
+
+JudgeConfigSchema {
+  mode: "keyword" | "llm" | "hybrid"  // default: "keyword"
+  confidenceThreshold: number          // default: 0.5
+  llm?: JudgeLlmConfigSchema
+}
 ```
 
-## 変更対象ファイル
+`HarnessConfigSchema` に `judges: JudgeConfigSchema` として統合済み。
 
-| ファイル | 変更内容 |
-|----------|----------|
-| `src/judges/llmRequirementsJudge.ts` | 新規: LLM ベース判定ロジック |
-| `src/judges/requirementsJudge.ts` | 変更なし（フォールバックとして維持） |
-| `src/runner/pipeline.ts` | judge モードに応じた分岐 |
-| `src/schemas/config.ts` | `JudgeConfigSchema` 追加、`HarnessConfigSchema` に統合 |
-| `src/schemas/domain.ts` | `CriterionEvaluationSchema` 追加 |
-| `src/reporters/markdownReporter.ts` | reasoning の表示対応 |
-| `configs/harness.config.json` | `judges` セクション追加（デフォルト `keyword`） |
-| `test/unit/judges/llmRequirementsJudge.test.ts` | 新規: プロンプト構築・レスポンスパースのテスト |
+#### `src/schemas/domain.ts`
 
-## テスト計画
+```ts
+CriterionEvaluationSchema {
+  criterion: string
+  pass: boolean
+  reasoning: string
+  confidence: number  // 0.0-1.0
+}
+```
 
-1. プロンプト構築の単体テスト（入力 → 期待プロンプト文字列）
-2. LLM レスポンスのパース・正規化テスト（正常 JSON / 不正 JSON / 空）
-3. confidence threshold によるフィルタリングテスト
-4. hybrid モードのフォールバック動作テスト
-5. 既存 `requirementsJudge.test.ts` の pass 確認（keyword モードの後方互換）
+`JudgeResultSchema` に `criterionEvaluations?: CriterionEvaluation[]` を追加。
 
-## マイルストーン
+### パイプライン統合
 
-1. `JudgeConfigSchema` + config 拡張
-2. `CriterionEvaluationSchema` のドメインスキーマ追加
-3. `llmRequirementsJudge.ts` の実装（プロンプト構築 + レスポンスパース）
-4. `pipeline.ts` の分岐ロジック
-5. Markdown レポートの reasoning 表示
-6. テスト + smoke シナリオ通過
+`pipeline.ts` の `runRequirementsJudgeWithMode` 関数で mode に応じて分岐:
+
+```ts
+const runRequirementsJudgeWithMode = async (config, requirements, judges, patch) => {
+  if (!requirements || mode === "keyword") return runRequirementsJudge(...)
+  try {
+    return await runLlmRequirementsJudge(requirements, judges, patch, config)
+  } catch {
+    if (mode === "llm") return error judge result
+    return keyword fallback with note  // hybrid
+  }
+}
+```
+
+### Markdown レポート
+
+requirements judge が `criterionEvaluations` を持つ場合、各基準の reasoning を表示:
+
+```markdown
+- requirements: pass=true score=75 reasons=LLM judge: 3/4 criteria satisfied
+  - [pass] "finalDecision is pass or fail" (confidence: 0.92): The result.finalDecision field is present...
+  - [fail] "Artifacts are created" (confidence: 0.40): No direct evidence of artifact creation...
+```
+
+## 設定例
+
+### localLlm を judge に使う（デフォルト）
+
+`judges.llm.apiBaseUrl` を省略すると `adapters.localLlm.apiBaseUrl` を自動フォールバック。
+
+```json
+{
+  "judges": {
+    "mode": "hybrid",
+    "confidenceThreshold": 0.5
+  }
+}
+```
+
+### Groq（無料枠、OpenAI 互換）
+
+```json
+{
+  "judges": {
+    "mode": "llm",
+    "confidenceThreshold": 0.5,
+    "llm": {
+      "apiBaseUrl": "https://api.groq.com/openai",
+      "apiKeyEnv": "GROQ_API_KEY",
+      "model": "llama-3.3-70b-versatile",
+      "timeoutMs": 60000
+    }
+  }
+}
+```
+
+### Google Gemini（無料枠、OpenAI 互換エンドポイント）
+
+```json
+{
+  "judges": {
+    "mode": "llm",
+    "confidenceThreshold": 0.5,
+    "llm": {
+      "apiBaseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "apiKeyEnv": "GEMINI_API_KEY",
+      "model": "gemini-2.0-flash",
+      "timeoutMs": 60000
+    }
+  }
+}
+```
+
+### OpenAI
+
+```json
+{
+  "judges": {
+    "mode": "llm",
+    "confidenceThreshold": 0.6,
+    "llm": {
+      "apiBaseUrl": "https://api.openai.com",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "model": "gpt-4o-mini",
+      "timeoutMs": 30000
+    }
+  }
+}
+```
+
+## テスト
+
+`test/unit/judges/llmRequirementsJudge.test.ts`:
+
+1. requirements が undefined の場合にスキップして pass を返す
+2. successCriteria が0件の場合に pass を返す
+3. API が到達不能の場合に fail を返す（エラーメッセージ付き）
+4. keyword fallback の動作確認（hybrid モードのシミュレーション）
+5. `judges.llm` セクションを持つ config スキーマのバリデーション
+6. デフォルトが `keyword` モードであることの確認
+
+## 今後の改善点
+
+- LLM の判定結果に対するテストのためのモック機構（現状は API 到達不能ケースのみ）
+- より高性能なモデルが使える環境では `mode: "llm"` を推奨、現状は `mode: "hybrid"` を推奨
+- confidence threshold のシナリオ別チューニング（requirements ファイルへの `judgeThreshold` 追加）

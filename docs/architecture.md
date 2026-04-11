@@ -2,10 +2,10 @@
 
 `llmharness` is a Bun + TypeScript evaluation harness that runs scenario execution in a loop (up to `maxAttempts`) through four phases:
 
-1. Generation: `localLlm` returns one Astmend operation JSON. On retries, includes feedback from previous failures.
-2. Apply: `Astmend` applies the operation. If it fails, the loop may retry with feedback.
+1. Generation: `localLlm` returns patch text (Astmend JSON / Unified Diff / file-replace). On retries, includes feedback from previous failures.
+2. Apply: patch router selects an apply path (`Astmend` / unified diff / file-replace). If it fails, the loop may retry with feedback.
 3. Review: `diffGuard` reviews the produced diff. If blocking findings exist, the loop may retry with feedback.
-4. Judge: syntax/test/risk judges compute scores. If all judges pass, the loop terminates successfully.
+4. Judge: syntax/test/risk judges compute scores. Requirements judge runs in `keyword` / `llm` / `hybrid` mode. If all judges pass, the loop terminates successfully.
 5. Stop condition: loop stops on `pass`, or on `maxAttempts` with `finalDecision=fail` and an explicit exhaustion reason.
 6. Attempt artifacts: each attempt writes `attemptN.patch` and `attemptN.json` for reproducibility.
 
