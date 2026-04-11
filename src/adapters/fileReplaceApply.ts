@@ -8,6 +8,9 @@ import type { AstmendApplyInput } from "./astmend";
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
 
+const normalizeComparablePath = (value: string): string =>
+	value.replace(/\\/g, "/").replace(/^\.\//, "");
+
 const resolveFileReplacePayload = (
 	patch: string,
 	targetFiles: string[],
@@ -47,6 +50,9 @@ export const applyFileReplace = async (
 	const { patch, targetFiles, config } = input;
 	const workspaceRoot = resolve(config.workspaceRoot);
 	const payload = resolveFileReplacePayload(patch, targetFiles);
+	const targetPathLookup = new Map(
+		targetFiles.map((path) => [normalizeComparablePath(path), path]),
+	);
 
 	if (!payload.file || payload.content === undefined) {
 		return parseApplyResult({
@@ -60,7 +66,9 @@ export const applyFileReplace = async (
 		});
 	}
 
-	if (!targetFiles.includes(payload.file)) {
+	const normalizedPayloadFile = normalizeComparablePath(payload.file);
+	const matchedTargetPath = targetPathLookup.get(normalizedPayloadFile);
+	if (!matchedTargetPath) {
 		return parseApplyResult({
 			success: false,
 			patchedFiles: [],
@@ -76,7 +84,7 @@ export const applyFileReplace = async (
 		});
 	}
 
-	const outputPath = resolve(workspaceRoot, payload.file);
+	const outputPath = resolve(workspaceRoot, normalizedPayloadFile);
 	if (
 		!outputPath.startsWith(`${workspaceRoot}/`) &&
 		outputPath !== workspaceRoot
@@ -98,7 +106,7 @@ export const applyFileReplace = async (
 		await writeTextFile(outputPath, payload.content);
 		return parseApplyResult({
 			success: true,
-			patchedFiles: [payload.file],
+			patchedFiles: [matchedTargetPath],
 			rejects: [],
 			diagnostics: ["file-replace patch applied."],
 			diff: patch,

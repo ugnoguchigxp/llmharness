@@ -36,6 +36,13 @@
 			"temperature": 0
 		}
 	},
+	"context": {
+		"enabled": true,
+		"maxContextTokens": 4000,
+		"includeImports": true,
+		"includeTests": true,
+		"maxFileLines": 500
+	},
 	"checks": {
 		"runTypecheck": true,
 		"typecheckCommand": "bun run typecheck",

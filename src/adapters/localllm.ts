@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import type { CollectedContext } from "../context/contextCollector";
 import {
 	type GenerateResult,
 	type HarnessConfig,
@@ -8,6 +9,12 @@ import {
 import { runCommand } from "../utils/exec";
 import { postJson } from "../utils/http";
 import { tryParseJson } from "../utils/json";
+import {
+	extractLlmText,
+	readApiKey,
+	resolveApiUrl,
+	shellQuoteLlm,
+} from "../utils/llm";
 import { detectPatchFormat } from "./patchFormat";
 
 export type Feedback = {
@@ -21,6 +28,7 @@ export type LocalLlmInput = {
 	config: HarnessConfig;
 	memoryContext?: string;
 	feedback?: Feedback;
+	contextData?: CollectedContext;
 };
 
 type OpenAICompatibleResponse = {
@@ -89,7 +97,7 @@ const toFiniteNumber = (value: unknown): number => {
 };
 
 const buildPrompt = (input: LocalLlmInput): string => {
-	const { scenario, feedback, config } = input;
+	const { scenario, feedback, config, contextData } = input;
 	const format = config.adapters.astmend.patchFormat;
 	const parts = [
 		"You are a code-fix model.",
@@ -133,6 +141,34 @@ const buildPrompt = (input: LocalLlmInput): string => {
 		);
 	}
 
+	// Inject source context
+	if (contextData && contextData.files.length > 0) {
+		const targetFiles = contextData.files.filter((f) => f.role === "target");
+		const typeFiles = contextData.files.filter((f) => f.role === "type");
+		const testFiles = contextData.files.filter((f) => f.role === "test");
+		const relatedFiles = contextData.files.filter((f) => f.role === "related");
+
+		if (
+			targetFiles.length > 0 ||
+			typeFiles.length > 0 ||
+			relatedFiles.length > 0
+		) {
+			parts.push("", "[Source Context]");
+			for (const f of [...targetFiles, ...typeFiles, ...relatedFiles]) {
+				const suffix = f.truncated ? " [truncated]" : "";
+				parts.push(`--- ${f.path}${suffix} ---`, f.content, "");
+			}
+		}
+
+		if (testFiles.length > 0) {
+			parts.push("[Related Tests]");
+			for (const f of testFiles) {
+				const suffix = f.truncated ? " [truncated]" : "";
+				parts.push(`--- ${f.path}${suffix} ---`, f.content, "");
+			}
+		}
+	}
+
 	if (feedback) {
 		parts.push(`[Retry Feedback (Attempt ${feedback.attempt})]`);
 		if (feedback.previousIssues.length > 0) {
@@ -153,37 +189,6 @@ const buildPrompt = (input: LocalLlmInput): string => {
 	parts.push("Instruction:");
 	parts.push(scenario.instruction);
 	return parts.join("\n");
-};
-
-const resolveUrl = (baseUrl: string, path: string): string => {
-	return new URL(
-		path,
-		baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`,
-	).toString();
-};
-
-const readApiKey = (envName: string): string | undefined => {
-	const value = process.env[envName];
-	return typeof value === "string" && value.length > 0 ? value : undefined;
-};
-
-const extractContent = (content: unknown): string | undefined => {
-	if (typeof content === "string") {
-		return content.trim();
-	}
-	if (!Array.isArray(content)) {
-		return undefined;
-	}
-
-	const textParts = content
-		.map((item) => {
-			if (!isRecord(item)) {
-				return undefined;
-			}
-			return typeof item.text === "string" ? item.text : undefined;
-		})
-		.filter((item): item is string => typeof item === "string");
-	return textParts.join("\n").trim();
 };
 
 const fallbackOperation = (
@@ -368,10 +373,6 @@ const parseCliOutput = (
 	});
 };
 
-const shellQuote = (value: string): string => {
-	return `'${value.replace(/'/g, `'"'"'`)}'`;
-};
-
 export const generateWithLocalLlm = async (
 	input: LocalLlmInput,
 ): Promise<GenerateResult> => {
@@ -390,7 +391,7 @@ export const generateWithLocalLlm = async (
 			);
 		}
 
-		const url = resolveUrl(llmConfig.apiBaseUrl, llmConfig.apiPath);
+		const url = resolveApiUrl(llmConfig.apiBaseUrl, llmConfig.apiPath);
 		const apiKey = readApiKey(llmConfig.apiKeyEnv);
 		const response = await postJson<OpenAICompatibleResponse>(
 			url,
@@ -412,7 +413,7 @@ export const generateWithLocalLlm = async (
 			apiKey ? { authorization: `Bearer ${apiKey}` } : undefined,
 		);
 
-		const content = extractContent(response.choices?.[0]?.message?.content);
+		const content = extractLlmText(response.choices?.[0]?.message?.content);
 		if (!content || content.length === 0) {
 			throw new Error(
 				"localLlm API response does not include choices[0].message.content.",
@@ -438,10 +439,10 @@ export const generateWithLocalLlm = async (
 	const placeholder = llmConfig.commandPromptPlaceholder;
 
 	if (command.includes(placeholder)) {
-		command = command.split(placeholder).join(shellQuote(prompt));
+		command = command.split(placeholder).join(shellQuoteLlm(prompt));
 		stdin = undefined;
 	} else if (llmConfig.commandPromptMode === "arg") {
-		command = `${command} ${shellQuote(prompt)}`;
+		command = `${command} ${shellQuoteLlm(prompt)}`;
 		stdin = undefined;
 	}
 

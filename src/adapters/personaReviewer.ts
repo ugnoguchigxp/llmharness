@@ -8,6 +8,12 @@ import { parsePersonaReviewResult } from "../schemas";
 import { runCommand } from "../utils/exec";
 import { postJson } from "../utils/http";
 import { tryParseJson } from "../utils/json";
+import {
+	extractLlmText,
+	readApiKey,
+	resolveApiUrl,
+	shellQuoteLlm,
+} from "../utils/llm";
 
 type OpenAICompatibleResponse = {
 	choices?: Array<{ message?: { content?: unknown } }>;
@@ -15,17 +21,6 @@ type OpenAICompatibleResponse = {
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
 	typeof v === "object" && v !== null && !Array.isArray(v);
-
-const extractText = (content: unknown): string | undefined => {
-	if (typeof content === "string") return content.trim();
-	if (!Array.isArray(content)) return undefined;
-	return content
-		.map((item) =>
-			isRecord(item) && typeof item.text === "string" ? item.text : "",
-		)
-		.join("\n")
-		.trim();
-};
 
 const buildReviewPrompt = (
 	persona: ReviewPersona,
@@ -45,16 +40,6 @@ const buildReviewPrompt = (
 		patch,
 	].join("\n");
 };
-
-const readApiKey = (envName: string): string | undefined => {
-	const v = process.env[envName];
-	return typeof v === "string" && v.length > 0 ? v : undefined;
-};
-
-const resolveUrl = (base: string, path: string): string =>
-	new URL(path, base.endsWith("/") ? base : `${base}/`).toString();
-
-const shellQuote = (v: string): string => `'${v.replace(/'/g, `'"'"'`)}'`;
 
 const parseReviewResponse = (
 	raw: string,
@@ -106,7 +91,7 @@ export const reviewWithPersona = async (
 		}
 
 		try {
-			const url = resolveUrl(llmConfig.apiBaseUrl, llmConfig.apiPath);
+			const url = resolveApiUrl(llmConfig.apiBaseUrl, llmConfig.apiPath);
 			const apiKey = readApiKey(llmConfig.apiKeyEnv);
 			const response = await postJson<OpenAICompatibleResponse>(
 				url,
@@ -124,7 +109,7 @@ export const reviewWithPersona = async (
 				llmConfig.timeoutMs,
 				apiKey ? { authorization: `Bearer ${apiKey}` } : undefined,
 			);
-			const content = extractText(response.choices?.[0]?.message?.content);
+			const content = extractLlmText(response.choices?.[0]?.message?.content);
 			if (!content) {
 				return parsePersonaReviewResult({
 					personaName: persona.name,
@@ -150,10 +135,10 @@ export const reviewWithPersona = async (
 		const placeholder = llmConfig.commandPromptPlaceholder;
 
 		if (command.includes(placeholder)) {
-			command = command.split(placeholder).join(shellQuote(prompt));
+			command = command.split(placeholder).join(shellQuoteLlm(prompt));
 			stdin = undefined;
 		} else if (llmConfig.commandPromptMode === "arg") {
-			command = `${command} ${shellQuote(prompt)}`;
+			command = `${command} ${shellQuoteLlm(prompt)}`;
 			stdin = undefined;
 		}
 

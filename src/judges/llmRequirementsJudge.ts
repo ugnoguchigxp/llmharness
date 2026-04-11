@@ -7,6 +7,7 @@ import {
 } from "../schemas";
 import { postJson } from "../utils/http";
 import { tryParseJson } from "../utils/json";
+import { extractLlmText, readApiKey, resolveApiUrl } from "../utils/llm";
 
 type OpenAICompatibleResponse = {
 	choices?: Array<{
@@ -53,26 +54,6 @@ const buildJudgePrompt = (
 		"Each element must have these fields: criterion (string), pass (boolean), reasoning (string), confidence (number 0.0-1.0).",
 		'Example: [{"criterion":"...","pass":true,"reasoning":"...","confidence":0.9}]',
 	].join("\n");
-};
-
-const resolveUrl = (baseUrl: string, path: string): string =>
-	new URL(path, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`).toString();
-
-const readApiKey = (envName: string): string | undefined => {
-	const value = process.env[envName];
-	return typeof value === "string" && value.length > 0 ? value : undefined;
-};
-
-const extractContent = (content: unknown): string | undefined => {
-	if (typeof content === "string") return content.trim();
-	if (!Array.isArray(content)) return undefined;
-	return content
-		.map((item) =>
-			isRecord(item) && typeof item.text === "string" ? item.text : undefined,
-		)
-		.filter((t): t is string => t !== undefined)
-		.join("\n")
-		.trim();
 };
 
 const parseEvaluations = (
@@ -158,7 +139,7 @@ const callLlmApi = async (
 	const temperature = llmConfig?.temperature ?? 0;
 	const timeoutMs = llmConfig?.timeoutMs ?? 60000;
 
-	const url = resolveUrl(apiBaseUrl, apiPath);
+	const url = resolveApiUrl(apiBaseUrl, apiPath);
 	const apiKey = readApiKey(apiKeyEnv);
 
 	const response = await postJson<OpenAICompatibleResponse>(
@@ -179,7 +160,7 @@ const callLlmApi = async (
 		apiKey ? { authorization: `Bearer ${apiKey}` } : undefined,
 	);
 
-	const content = extractContent(response.choices?.[0]?.message?.content);
+	const content = extractLlmText(response.choices?.[0]?.message?.content);
 	if (!content) {
 		throw new Error("LLM judge: empty response from API.");
 	}

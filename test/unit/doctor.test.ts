@@ -5,7 +5,14 @@ import { runDoctor, summarizeDoctor } from "../../src/doctor";
 import { parseHarnessConfig } from "../../src/schemas";
 import { cleanupTempDir, createTempDir } from "../contract/utils/tempCli";
 
-const buildApiOnlyConfig = (workspaceRoot: string) =>
+const buildApiOnlyConfig = (
+	workspaceRoot: string,
+	patchFormat:
+		| "auto"
+		| "astmend-json"
+		| "unified-diff"
+		| "file-replace" = "auto",
+) =>
 	parseHarnessConfig({
 		runtime: "bun",
 		workspaceRoot,
@@ -20,6 +27,7 @@ const buildApiOnlyConfig = (workspaceRoot: string) =>
 				mode: "api",
 				endpoint: "https://example.com",
 				apiPath: "/apply",
+				patchFormat,
 			},
 			diffGuard: {
 				mode: "api",
@@ -102,6 +110,30 @@ describe("runDoctor requirements checks", () => {
 			expect(errorItem).toBeDefined();
 			expect(errorItem?.status).toBe("error");
 			expect(errorItem?.message).toContain("requirementsPath not found");
+		} finally {
+			await cleanupTempDir(dir);
+		}
+	});
+
+	test("skips patch binary check when patchFormat=file-replace", async () => {
+		const dir = await createTempDir("llmharness-doctor-patch-skip");
+		try {
+			const items = await runDoctor(buildApiOnlyConfig(dir, "file-replace"));
+			expect(items.some((item) => item.name === "patch.binary")).toBe(false);
+		} finally {
+			await cleanupTempDir(dir);
+		}
+	});
+
+	test("checks patch binary when patchFormat=unified-diff", async () => {
+		const dir = await createTempDir("llmharness-doctor-patch-check");
+		try {
+			const items = await runDoctor(buildApiOnlyConfig(dir, "unified-diff"));
+			const patchItem = items.find((item) => item.name === "patch.binary");
+			expect(patchItem).toBeDefined();
+			expect(patchItem?.status === "ok" || patchItem?.status === "error").toBe(
+				true,
+			);
 		} finally {
 			await cleanupTempDir(dir);
 		}
