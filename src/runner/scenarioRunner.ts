@@ -19,6 +19,7 @@ import type {
 	ScenarioInput,
 	ScenarioSuite,
 } from "../schemas";
+import { indexScenarioRun } from "../storage/runIndex";
 import { exists } from "../utils/fs";
 import { runPipeline } from "./pipeline";
 
@@ -109,6 +110,23 @@ const runScenarioAndWriteReports = async (
 		requirementsContext?.requirements,
 	);
 	await writeSarifReport(reportSarifPath, result);
+	try {
+		await indexScenarioRun({
+			config,
+			scenario,
+			result,
+			runDir,
+			reportJsonPath,
+			reportMarkdownPath,
+			reportSarifPath,
+		});
+	} catch (error) {
+		console.warn(
+			`run index update failed for ${scenario.id}: ${
+				error instanceof Error ? error.message : String(error)
+			}`,
+		);
+	}
 
 	return result.requirementsSummary;
 };

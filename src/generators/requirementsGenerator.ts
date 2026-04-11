@@ -13,7 +13,9 @@ const buildSuccessCriteria = (diff: DiffAnalysis): string[] => {
 	}
 
 	if (diff.category === "feature") {
-		criteria.push("The new feature is implemented as described in the commit message");
+		criteria.push(
+			"The new feature is implemented as described in the commit message",
+		);
 	}
 
 	if (diff.category === "refactor") {
@@ -27,7 +29,9 @@ const buildSuccessCriteria = (diff: DiffAnalysis): string[] => {
 	return criteria;
 };
 
-export const generateRequirementsFromDiff = (diff: DiffAnalysis): Requirements => {
+export const generateRequirementsFromDiff = (
+	diff: DiffAnalysis,
+): Requirements => {
 	const shortHash = diff.commitHash.slice(0, 8);
 	const fileList = diff.files.map((f) => f.path).join(", ");
 

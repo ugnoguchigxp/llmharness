@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { generateScenarioFromDiff } from "../../../src/generators/scenarioGenerator";
 import type { DiffAnalysis } from "../../../src/generators/diffAnalyzer";
+import { generateScenarioFromDiff } from "../../../src/generators/scenarioGenerator";
 
 const makeAnalysis = (overrides: Partial<DiffAnalysis> = {}): DiffAnalysis => ({
 	commitHash: "abc1234567890def",
@@ -8,7 +8,14 @@ const makeAnalysis = (overrides: Partial<DiffAnalysis> = {}): DiffAnalysis => ({
 	author: "Alice",
 	date: "2026-01-01",
 	files: [
-		{ path: "src/parser.ts", additions: 8, deletions: 3, isNew: false, isDeleted: false, isRenamed: false },
+		{
+			path: "src/parser.ts",
+			additions: 8,
+			deletions: 3,
+			isNew: false,
+			isDeleted: false,
+			isRenamed: false,
+		},
 	],
 	totalAdditions: 8,
 	totalDeletions: 3,
@@ -63,11 +70,28 @@ describe("generateScenarioFromDiff", () => {
 	test("includes non-deleted files in targetFiles", () => {
 		const analysis = makeAnalysis({
 			files: [
-				{ path: "src/a.ts", additions: 5, deletions: 0, isNew: true, isDeleted: false, isRenamed: false },
-				{ path: "src/b.ts", additions: 0, deletions: 3, isNew: false, isDeleted: true, isRenamed: false },
+				{
+					path: "src/a.ts",
+					additions: 5,
+					deletions: 0,
+					isNew: true,
+					isDeleted: false,
+					isRenamed: false,
+				},
+				{
+					path: "src/b.ts",
+					additions: 0,
+					deletions: 3,
+					isNew: false,
+					isDeleted: true,
+					isRenamed: false,
+				},
 			],
 		});
-		const scenario = generateScenarioFromDiff({ diff: analysis, suite: "regression" });
+		const scenario = generateScenarioFromDiff({
+			diff: analysis,
+			suite: "regression",
+		});
 		expect(scenario.targetFiles).toContain("src/a.ts");
 		expect(scenario.targetFiles).not.toContain("src/b.ts");
 	});
@@ -90,6 +114,8 @@ describe("generateScenarioFromDiff", () => {
 			suite: "regression",
 		});
 		expect(scenario.instruction).toContain("src/parser.ts");
-		expect(scenario.instruction).toContain("fix: resolve null pointer in parser");
+		expect(scenario.instruction).toContain(
+			"fix: resolve null pointer in parser",
+		);
 	});
 });

@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
-import type { CollectedContext } from "../context/contextCollector";
 import {
 	type GenerateResult,
 	type HarnessConfig,
+	type LocalLlmConfigCandidate,
 	parseGenerateResult,
 	type ScenarioInput,
 } from "../schemas";
@@ -16,20 +16,15 @@ import {
 	shellQuoteLlm,
 } from "../utils/llm";
 import { detectPatchFormat } from "./patchFormat";
+import {
+	type GenerationFeedback,
+	type GenerationInput,
+	registerPatchGenerator,
+} from "./registry";
 
-export type Feedback = {
-	attempt: number;
-	previousIssues: string[];
-	previousRejects: Array<{ path: string; reason: string }>;
-};
+export type Feedback = GenerationFeedback;
 
-export type LocalLlmInput = {
-	scenario: ScenarioInput;
-	config: HarnessConfig;
-	memoryContext?: string;
-	feedback?: Feedback;
-	contextData?: CollectedContext;
-};
+export type LocalLlmInput = GenerationInput;
 
 type OpenAICompatibleResponse = {
 	choices?: Array<{
@@ -373,15 +368,12 @@ const parseCliOutput = (
 	});
 };
 
-export const generateWithLocalLlm = async (
+const generateWithLocalLlmCandidate = async (
 	input: LocalLlmInput,
+	llmConfig: LocalLlmConfigCandidate,
+	prompt: string,
 ): Promise<GenerateResult> => {
-	const { scenario, config, memoryContext } = input;
-	const llmConfig = config.adapters.localLlm;
-	const basePrompt = buildPrompt(input);
-	const prompt = memoryContext
-		? `[Memory Context]\n${memoryContext}\n\n[Task]\n${basePrompt}`
-		: basePrompt;
+	const { scenario, config } = input;
 	const workspaceRoot = resolve(config.workspaceRoot);
 
 	if (llmConfig.mode === "api") {
@@ -459,3 +451,48 @@ export const generateWithLocalLlm = async (
 
 	return parseCliOutput(cliResult.stdout, scenario, config);
 };
+
+export const generateWithLocalLlm = async (
+	input: LocalLlmInput,
+): Promise<GenerateResult> => {
+	const { config, memoryContext } = input;
+	const llmConfig = config.adapters.localLlm;
+	const basePrompt = buildPrompt(input);
+	const prompt = memoryContext
+		? `[Memory Context]\n${memoryContext}\n\n[Task]\n${basePrompt}`
+		: basePrompt;
+	const candidates: LocalLlmConfigCandidate[] = [
+		llmConfig,
+		...llmConfig.fallbacks,
+	];
+	const failures: string[] = [];
+
+	for (const [index, candidate] of candidates.entries()) {
+		try {
+			const result = await generateWithLocalLlmCandidate(
+				input,
+				candidate,
+				prompt,
+			);
+			if (index === 0) {
+				return result;
+			}
+			return parseGenerateResult({
+				...result,
+				summary:
+					result.summary && !result.summary.includes("[fallback")
+						? `${result.summary} [fallback ${index}]`
+						: (result.summary ?? `generation succeeded via fallback ${index}`),
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			failures.push(`candidate ${index} (${candidate.mode}): ${message}`);
+		}
+	}
+
+	throw new Error(
+		`localLlm failed across ${candidates.length} candidate(s): ${failures.join(" | ")}`,
+	);
+};
+
+registerPatchGenerator("localLlm", generateWithLocalLlm);

@@ -229,4 +229,59 @@ describe("diffGuard adapter contract", () => {
 			await cleanupTempDir(dir);
 		}
 	});
+
+	test("falls back to secondary diffGuard candidate on technical failure", async () => {
+		const dir = await createTempDir("llmharness-diffguard-fallback");
+		try {
+			const primaryCli = await createCliScript(
+				dir,
+				"diffguard-primary-nonjson.sh",
+				"echo 'primary emitted plain text'",
+			);
+			const fallbackCli = await createCliScript(
+				dir,
+				"diffguard-fallback-json.sh",
+				[
+					"cat <<'JSON'",
+					'{"findings":[{"id":"DG200","level":"warn","message":"from fallback"}],"blocking":false}',
+					"JSON",
+				].join("\n"),
+			);
+
+			const config = parseHarnessConfig({
+				runtime: "bun",
+				workspaceRoot: dir,
+				adapters: {
+					localLlm: {
+						mode: "cli",
+						command: "echo '{}'",
+						model: "test-model",
+					},
+					astmend: {
+						mode: "lib",
+						libEntrypoint: "./unused.mjs",
+					},
+					diffGuard: {
+						mode: "cli",
+						command: primaryCli,
+						timeoutMs: 5000,
+						fallbacks: [
+							{
+								mode: "cli",
+								command: fallbackCli,
+								timeoutMs: 5000,
+							},
+						],
+					},
+				},
+			});
+
+			const result = await reviewWithDiffGuard({ patch, config });
+
+			expect(result.findings[0]?.id).toBe("DG200");
+			expect(result.blocking).toBe(false);
+		} finally {
+			await cleanupTempDir(dir);
+		}
+	});
 });

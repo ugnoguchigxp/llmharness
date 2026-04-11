@@ -116,4 +116,65 @@ describe("localLlm adapter contract", () => {
 			await cleanupTempDir(dir);
 		}
 	});
+
+	test("falls back to secondary localLlm candidate when primary command fails", async () => {
+		const dir = await createTempDir("llmharness-local-fallback");
+		try {
+			const primary = await createCliScript(
+				dir,
+				"llm-primary-fail.sh",
+				["echo 'primary failed' 1>&2", "exit 23"].join("\n"),
+			);
+			const secondary = await createCliScript(
+				dir,
+				"llm-secondary-ok.sh",
+				[
+					"cat <<'JSON'",
+					'{"patch":"{\\"type\\":\\"add_import\\",\\"file\\":\\"src/index.ts\\",\\"module\\":\\"./fallback\\",\\"named\\":[{\\"name\\":\\"Fallback\\"}]}","summary":"secondary success"}',
+					"JSON",
+				].join("\n"),
+			);
+
+			const config = parseHarnessConfig({
+				runtime: "bun",
+				workspaceRoot: dir,
+				adapters: {
+					localLlm: {
+						mode: "cli",
+						command: primary,
+						commandPromptMode: "stdin",
+						model: "test-model",
+						timeoutMs: 5000,
+						temperature: 0,
+						fallbacks: [
+							{
+								mode: "cli",
+								command: secondary,
+								commandPromptMode: "stdin",
+								model: "test-model",
+								timeoutMs: 5000,
+								temperature: 0,
+							},
+						],
+					},
+					astmend: {
+						mode: "lib",
+						libEntrypoint: "./unused.mjs",
+					},
+					diffGuard: {
+						mode: "cli",
+						command: "echo '{}'",
+					},
+				},
+			});
+
+			const result = await generateWithLocalLlm({ scenario, config });
+			const patch = JSON.parse(result.patch) as Record<string, unknown>;
+
+			expect(patch.module).toBe("./fallback");
+			expect(result.summary?.includes("fallback 1")).toBe(true);
+		} finally {
+			await cleanupTempDir(dir);
+		}
+	});
 });

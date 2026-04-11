@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import {
+	type DiffGuardConfigCandidate,
 	type HarnessConfig,
 	parseRiskResult,
 	type RiskLevel,
@@ -10,11 +11,10 @@ import {
 import { runCommand } from "../utils/exec";
 import { postJson } from "../utils/http";
 import { tryParseJson } from "../utils/json";
+import { type RiskReviewInput, registerRiskReviewer } from "./registry";
 
-export type DiffGuardInput = {
-	patch: string;
+export type DiffGuardInput = RiskReviewInput & {
 	config: HarnessConfig;
-	sourceFiles?: string[];
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -214,11 +214,23 @@ const runDiffGuardCli = async (
 const resolveUrl = (baseUrl: string, path: string): string =>
 	new URL(path, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`).toString();
 
-export const reviewWithDiffGuard = async (
+const TECHNICAL_FAILURE_IDS = new Set([
+	"DG-CONFIG-ERROR",
+	"DG-API-ERROR",
+	"DG-CLI-ERROR",
+	"DG-CLI-EXIT",
+	"DG-PARSE-ERROR",
+	"DG-WARN-NO-JSON",
+]);
+
+const isTechnicalFailure = (result: RiskResult): boolean =>
+	result.findings.some((finding) => TECHNICAL_FAILURE_IDS.has(finding.id));
+
+const reviewWithDiffGuardCandidate = async (
 	input: DiffGuardInput,
+	diffGuardConfig: DiffGuardConfigCandidate,
 ): Promise<RiskResult> => {
 	const { patch, config, sourceFiles = [] } = input;
-	const diffGuardConfig = config.adapters.diffGuard;
 
 	if (diffGuardConfig.mode === "api") {
 		if (!diffGuardConfig.endpoint) {
@@ -319,3 +331,40 @@ export const reviewWithDiffGuard = async (
 
 	return normalized;
 };
+
+export const reviewWithDiffGuard = async (
+	input: DiffGuardInput,
+): Promise<RiskResult> => {
+	const candidates: DiffGuardConfigCandidate[] = [
+		input.config.adapters.diffGuard,
+		...input.config.adapters.diffGuard.fallbacks,
+	];
+
+	let lastResult: RiskResult | undefined;
+	for (const [index, candidate] of candidates.entries()) {
+		const result = await reviewWithDiffGuardCandidate(input, candidate);
+		lastResult = result;
+		const hasNext = index < candidates.length - 1;
+		if (hasNext && isTechnicalFailure(result)) {
+			continue;
+		}
+		return result;
+	}
+
+	return (
+		lastResult ??
+		parseRiskResult({
+			levelCounts: { error: 1, warn: 0, info: 0 },
+			findings: [
+				{
+					id: "DG-UNKNOWN-ERROR",
+					level: "error",
+					message: "DiffGuard fallback execution ended without a result.",
+				},
+			],
+			blocking: true,
+		})
+	);
+};
+
+registerRiskReviewer("diffGuard", reviewWithDiffGuard);

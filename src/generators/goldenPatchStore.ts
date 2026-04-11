@@ -7,10 +7,10 @@ export const saveGoldenPatch = async (
 	workspaceRoot: string,
 	outputDir: string,
 ): Promise<string> => {
-	const result = await runCommand(
-		`git diff ${commitHash}^..${commitHash}`,
-		{ cwd: workspaceRoot, timeoutMs: 10000 },
-	);
+	const result = await runCommand(`git diff ${commitHash}^..${commitHash}`, {
+		cwd: workspaceRoot,
+		timeoutMs: 10000,
+	});
 
 	if (result.exitCode !== 0) {
 		throw new Error(

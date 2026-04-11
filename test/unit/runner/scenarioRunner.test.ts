@@ -1,7 +1,10 @@
+import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runSuite } from "../../../src/runner/scenarioRunner";
+import { parseHarnessConfig } from "../../../src/schemas";
+import { resolveRunIndexPath } from "../../../src/storage/runIndex";
 import {
 	cleanupTempDir,
 	createCliScript,
@@ -98,6 +101,20 @@ describe("runSuite", () => {
 			expect(ids).toEqual([...ids].sort((a, b) => a.localeCompare(b)));
 			const runDirs = results.map((item) => item.runDir);
 			expect(new Set(runDirs).size).toBe(runDirs.length);
+
+			const parsedConfig = parseHarnessConfig(
+				JSON.parse(await Bun.file(configPath).text()),
+			);
+			const indexPath = resolveRunIndexPath(parsedConfig);
+			const db = new Database(indexPath, { readonly: true });
+			try {
+				const row = db.query(`SELECT COUNT(*) as count FROM runs`).get() as {
+					count: number | bigint;
+				};
+				expect(Number(row.count)).toBe(results.length);
+			} finally {
+				db.close();
+			}
 		} finally {
 			await cleanupTempDir(dir);
 		}

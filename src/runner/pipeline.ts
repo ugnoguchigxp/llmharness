@@ -1,8 +1,12 @@
 import { join, resolve } from "node:path";
-import { reviewWithDiffGuard } from "../adapters/diffguard";
-import { type Feedback, generateWithLocalLlm } from "../adapters/localllm";
 import { applyPatch } from "../adapters/patchRouter";
 import { reviewWithPersona } from "../adapters/personaReviewer";
+import { ensureBuiltinAdaptersRegistered } from "../adapters/registerBuiltins";
+import {
+	type GenerationFeedback,
+	resolvePatchGenerator,
+	resolveRiskReviewer,
+} from "../adapters/registry";
 import { collectContext } from "../context/contextCollector";
 import { runBehaviorJudge } from "../judges/behaviorJudge";
 import { runGoldenPatchJudge } from "../judges/goldenPatchJudge";
@@ -82,7 +86,7 @@ const errorResult = (
 
 const buildFeedbackForPrompt = (
 	state: OrchestratorState,
-): Feedback | undefined => {
+): GenerationFeedback | undefined => {
 	if (state.attempt <= 1) {
 		return undefined;
 	}
@@ -182,6 +186,22 @@ export const runPipeline = async (
 	requirementsContext?: RequirementsContext,
 	requirementsSummaryInput?: RequirementsSummary,
 ): Promise<ScenarioResult> => {
+	ensureBuiltinAdaptersRegistered();
+
+	const generator = resolvePatchGenerator("localLlm");
+	if (!generator) {
+		throw new Error(
+			'Adapter registry does not have generator "localLlm" registered.',
+		);
+	}
+
+	const riskReviewer = resolveRiskReviewer("diffGuard");
+	if (!riskReviewer) {
+		throw new Error(
+			'Adapter registry does not have risk reviewer "diffGuard" registered.',
+		);
+	}
+
 	const startedAt = Date.now();
 	const workspaceRoot = resolve(config.workspaceRoot);
 	const memory = new MemoryService(config);
@@ -221,7 +241,7 @@ export const runPipeline = async (
 
 		let generate: GenerateResult;
 		try {
-			generate = await generateWithLocalLlm({
+			generate = await generator({
 				scenario,
 				config,
 				memoryContext,
@@ -285,7 +305,7 @@ export const runPipeline = async (
 		if (apply.success) {
 			try {
 				const reviewPatch = apply.diff ?? generate.patch;
-				risk = await reviewWithDiffGuard({
+				risk = await riskReviewer({
 					patch: reviewPatch,
 					config,
 					sourceFiles: scenario.targetFiles,

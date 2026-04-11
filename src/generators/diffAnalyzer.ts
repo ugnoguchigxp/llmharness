@@ -65,9 +65,7 @@ export const inferCategory = (
 
 	const hasDocFiles =
 		files.length > 0 &&
-		files.every(
-			(f) => f.path.endsWith(".md") || f.path.endsWith(".txt"),
-		);
+		files.every((f) => f.path.endsWith(".md") || f.path.endsWith(".txt"));
 	if (hasDocFiles) return "docs";
 
 	return "other";
@@ -135,7 +133,10 @@ export const parseDiffAnalysisFromRawOutput = (
 
 	const totalAdditions = files.reduce((sum, f) => sum + f.additions, 0);
 	const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0);
-	const complexity = inferComplexity(files.length, totalAdditions + totalDeletions);
+	const complexity = inferComplexity(
+		files.length,
+		totalAdditions + totalDeletions,
+	);
 	const category = inferCategory(commitMessage, files);
 
 	return {
@@ -222,10 +223,10 @@ export const getCommitHashes = async (
 	workspaceRoot: string,
 	count: number,
 ): Promise<string[]> => {
-	const result = await runCommand(
-		`git log --format="%H" -${count}`,
-		{ cwd: workspaceRoot, timeoutMs: 10000 },
-	);
+	const result = await runCommand(`git log --format="%H" -${count}`, {
+		cwd: workspaceRoot,
+		timeoutMs: 10000,
+	});
 
 	if (result.exitCode !== 0) {
 		throw new Error(`git log failed: ${result.stderr || result.stdout}`);

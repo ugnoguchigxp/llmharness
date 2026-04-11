@@ -1,11 +1,9 @@
 import type { ApplyResult } from "../schemas";
 import { parseApplyResult } from "../schemas";
 import { tryParseJson } from "../utils/json";
-import type { AstmendApplyInput } from "./astmend";
-import { applyWithAstmend } from "./astmend";
-import { applyFileReplace } from "./fileReplaceApply";
 import { detectPatchFormat } from "./patchFormat";
-import { applyUnifiedDiff } from "./unifiedDiffApply";
+import { ensureBuiltinAdaptersRegistered } from "./registerBuiltins";
+import { type PatchApplyInput, resolvePatchApplier } from "./registry";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
@@ -24,22 +22,19 @@ const isStructuredFileReplacePatch = (patch: string): boolean => {
 };
 
 export const applyPatch = async (
-	input: AstmendApplyInput,
+	input: PatchApplyInput,
 ): Promise<ApplyResult> => {
+	ensureBuiltinAdaptersRegistered();
+
 	const configuredFormat = input.config.adapters.astmend.patchFormat;
 	const format =
 		configuredFormat === "auto"
 			? detectPatchFormat(input.patch)
 			: configuredFormat;
 
-	if (format === "astmend-json") {
-		return applyWithAstmend(input);
-	}
-	if (format === "unified-diff") {
-		return applyUnifiedDiff(input);
-	}
 	if (
 		configuredFormat === "auto" &&
+		format === "file-replace" &&
 		!isStructuredFileReplacePatch(input.patch)
 	) {
 		return parseApplyResult({
@@ -55,5 +50,19 @@ export const applyPatch = async (
 			],
 		});
 	}
-	return applyFileReplace(input);
+
+	const applier = resolvePatchApplier(format);
+	if (!applier) {
+		return parseApplyResult({
+			success: false,
+			patchedFiles: [],
+			rejects: input.targetFiles.map((path) => ({
+				path,
+				reason: `No adapter registered for patch format: ${format}`,
+			})),
+			diagnostics: [`Missing patch applier adapter for format "${format}".`],
+		});
+	}
+
+	return applier(input);
 };

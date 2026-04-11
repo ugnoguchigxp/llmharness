@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { generateRequirementsFromDiff } from "../../../src/generators/requirementsGenerator";
 import type { DiffAnalysis } from "../../../src/generators/diffAnalyzer";
+import { generateRequirementsFromDiff } from "../../../src/generators/requirementsGenerator";
 
 const makeAnalysis = (overrides: Partial<DiffAnalysis> = {}): DiffAnalysis => ({
 	commitHash: "abc1234567890def",
@@ -56,25 +56,37 @@ describe("generateRequirementsFromDiff", () => {
 	});
 
 	test("adds bugfix-specific criterion for bugfix category", () => {
-		const req = generateRequirementsFromDiff(makeAnalysis({ category: "bugfix" }));
+		const req = generateRequirementsFromDiff(
+			makeAnalysis({ category: "bugfix" }),
+		);
 		const criteria = req.successCriteria ?? [];
 		expect(criteria.some((c) => c.toLowerCase().includes("bug"))).toBe(true);
 	});
 
 	test("adds feature-specific criterion for feature category", () => {
-		const req = generateRequirementsFromDiff(makeAnalysis({ category: "feature" }));
+		const req = generateRequirementsFromDiff(
+			makeAnalysis({ category: "feature" }),
+		);
 		const criteria = req.successCriteria ?? [];
-		expect(criteria.some((c) => c.toLowerCase().includes("feature"))).toBe(true);
+		expect(criteria.some((c) => c.toLowerCase().includes("feature"))).toBe(
+			true,
+		);
 	});
 
 	test("adds refactor-specific criterion for refactor category", () => {
-		const req = generateRequirementsFromDiff(makeAnalysis({ category: "refactor" }));
+		const req = generateRequirementsFromDiff(
+			makeAnalysis({ category: "refactor" }),
+		);
 		const criteria = req.successCriteria ?? [];
-		expect(criteria.some((c) => c.toLowerCase().includes("behavior"))).toBe(true);
+		expect(criteria.some((c) => c.toLowerCase().includes("behavior"))).toBe(
+			true,
+		);
 	});
 
 	test("adds test-specific criterion for test category", () => {
-		const req = generateRequirementsFromDiff(makeAnalysis({ category: "test" }));
+		const req = generateRequirementsFromDiff(
+			makeAnalysis({ category: "test" }),
+		);
 		const criteria = req.successCriteria ?? [];
 		expect(criteria.some((c) => c.toLowerCase().includes("test"))).toBe(true);
 	});

@@ -12,7 +12,7 @@ export const PatchFormatSchema = z.enum([
 ]);
 export const JudgeModeSchema = z.enum(["keyword", "llm", "hybrid"]);
 
-export const LocalLlmConfigSchema = z
+export const LocalLlmConfigCandidateSchema = z
 	.object({
 		mode: LocalLlmModeSchema.default("cli"),
 		apiBaseUrl: z.string().url().optional(),
@@ -27,7 +27,11 @@ export const LocalLlmConfigSchema = z
 	})
 	.strict();
 
-export const AstmendConfigSchema = z
+export const LocalLlmConfigSchema = LocalLlmConfigCandidateSchema.extend({
+	fallbacks: z.array(LocalLlmConfigCandidateSchema).default([]),
+}).strict();
+
+export const AstmendConfigCandidateSchema = z
 	.object({
 		mode: AstmendModeSchema.default("lib"),
 		endpoint: z.string().url().optional(),
@@ -40,7 +44,11 @@ export const AstmendConfigSchema = z
 	})
 	.strict();
 
-export const DiffGuardConfigSchema = z
+export const AstmendConfigSchema = AstmendConfigCandidateSchema.extend({
+	fallbacks: z.array(AstmendConfigCandidateSchema).default([]),
+}).strict();
+
+export const DiffGuardConfigCandidateSchema = z
 	.object({
 		mode: DiffGuardModeSchema.default("cli"),
 		endpoint: z.string().url().optional(),
@@ -49,6 +57,10 @@ export const DiffGuardConfigSchema = z
 		timeoutMs: z.number().int().positive().default(15000),
 	})
 	.strict();
+
+export const DiffGuardConfigSchema = DiffGuardConfigCandidateSchema.extend({
+	fallbacks: z.array(DiffGuardConfigCandidateSchema).default([]),
+}).strict();
 
 export const HarnessChecksConfigSchema = z
 	.object({
@@ -193,6 +205,15 @@ export type AstmendMode = z.infer<typeof AstmendModeSchema>;
 export type DiffGuardMode = z.infer<typeof DiffGuardModeSchema>;
 export type PatchFormat = z.infer<typeof PatchFormatSchema>;
 export type JudgeMode = z.infer<typeof JudgeModeSchema>;
+export type LocalLlmConfigCandidate = z.infer<
+	typeof LocalLlmConfigCandidateSchema
+>;
+export type AstmendConfigCandidate = z.infer<
+	typeof AstmendConfigCandidateSchema
+>;
+export type DiffGuardConfigCandidate = z.infer<
+	typeof DiffGuardConfigCandidateSchema
+>;
 export type LocalLlmConfig = z.infer<typeof LocalLlmConfigSchema>;
 export type AstmendConfig = z.infer<typeof AstmendConfigSchema>;
 export type DiffGuardConfig = z.infer<typeof DiffGuardConfigSchema>;

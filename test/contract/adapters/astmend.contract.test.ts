@@ -230,4 +230,65 @@ describe("astmend adapter contract", () => {
 			await cleanupTempDir(dir);
 		}
 	});
+
+	test("uses configured fallback candidate when primary astmend is unavailable", async () => {
+		const dir = await createTempDir("llmharness-astmend-config-fallback");
+		try {
+			const fallbackCli = await createCliScript(
+				dir,
+				"astmend-fallback-ok.sh",
+				[
+					"cat <<'JSON'",
+					'{"success":true,"patchedFiles":["src/index.ts"],"rejects":[],"diagnostics":["fallback cli ok"]}',
+					"JSON",
+				].join("\n"),
+			);
+
+			const config = parseHarnessConfig({
+				runtime: "bun",
+				workspaceRoot: dir,
+				adapters: {
+					localLlm: {
+						mode: "cli",
+						command: "echo '{}'",
+						model: "test-model",
+					},
+					astmend: {
+						mode: "api",
+						apiPath: "/apply",
+						timeoutMs: 5000,
+						fallbacks: [
+							{
+								mode: "cli",
+								command: fallbackCli,
+								timeoutMs: 5000,
+								enableLibFallback: false,
+								patchFormat: "astmend-json",
+							},
+						],
+					},
+					diffGuard: {
+						mode: "cli",
+						command: "echo '{}'",
+					},
+				},
+			});
+
+			const result = await applyWithAstmend({
+				patch,
+				targetFiles: ["src/index.ts"],
+				config,
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.diagnostics).toContain("fallback cli ok");
+			expect(
+				result.diagnostics.some((item) =>
+					item.includes("fallback candidate 1"),
+				),
+			).toBe(true);
+		} finally {
+			await cleanupTempDir(dir);
+		}
+	});
 });

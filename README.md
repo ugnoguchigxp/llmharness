@@ -15,6 +15,8 @@ TypeScript + Bun で構築した LLM 修正評価ハーネスです。`localLlm`
 - `bun run src/cli.ts eval --suite smoke`
 - `bun run eval:all`
 - `bun run src/cli.ts report --latest`
+- `bun run src/cli.ts search-runs --query "retry timeout" --limit 10`
+- `bun run src/cli.ts reindex-runs`
 - `bun run doctor`
 - `bun run src/cli.ts generate-scenario --requirements requirements/smoke-001.requirements.json --suite smoke`
 - `bun run src/cli.ts commit-memory` (Gnosis への同期と検証)
@@ -26,17 +28,35 @@ TypeScript + Bun で構築した LLM 修正評価ハーネスです。`localLlm`
 - `localLlm`
   - `api`: OpenAI互換 `/v1/chat/completions` を呼び出し
   - `cli`: `adapters.localLlm.command` を実行。`{{prompt}}` を含む場合は置換し、含まない場合は `commandPromptMode`（`stdin`/`arg`）で投入
+  - `fallbacks`: primary が技術的失敗した場合に順次試行する候補設定
 - `astmend`
   - `api`: `endpoint + apiPath` へ `POST { patch, targetFiles }`
   - `cli`: `adapters.astmend.command` を実行し、stdin に patch を渡す（失敗時は `libEntrypoint` によるライブラリフォールバック）
   - `lib`: `libEntrypoint` を直接 import して `applyPatchFromFile` を実行（推奨）
   - `patchFormat`: `auto | astmend-json | unified-diff | file-replace`（`auto` は生成パッチを自動判定して適用ルーターに委譲）
+  - `fallbacks`: primary が技術的失敗した場合に順次試行する候補設定
 - `diffGuard`
   - `api`: `endpoint + apiPath` へ `POST { patch }`
   - `cli`: `adapters.diffGuard.command` を実行し、stdin に patch を渡す
+  - `fallbacks`: primary が技術的失敗した場合に順次試行する候補設定
 
 CLI 出力は JSON を優先して解析し、JSON がない場合は安全側（失敗または警告）で判定します。
 初回のモデルロードが重い環境では `localLlm.timeoutMs` を長め（例: `180000`）に設定してください。
+
+## Run Index (SQLite + FTS)
+
+各シナリオ実行後に `artifacts/runs/run-index.sqlite` へ結果が自動インデックスされます。  
+全文検索は以下で実行できます。
+
+```bash
+bun run src/cli.ts search-runs --query "retry timeout" --limit 10
+```
+
+既存の `artifacts/runs/*` から index を再構築する場合:
+
+```bash
+bun run src/cli.ts reindex-runs
+```
 
 ## Requirements Layer
 

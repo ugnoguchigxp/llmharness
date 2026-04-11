@@ -37,6 +37,18 @@ bun run src/cli.ts eval --suite smoke --config configs/harness.config.json
 bun run src/cli.ts report --latest --config configs/harness.config.json
 ```
 
+- Run index search:
+
+```bash
+bun run src/cli.ts search-runs --query "retry timeout" --limit 10 --config configs/harness.config.json
+```
+
+- Reindex existing run reports:
+
+```bash
+bun run src/cli.ts reindex-runs --config configs/harness.config.json
+```
+
 ## CI notes
 
 `.github/workflows/ci.yml` uses:
@@ -52,6 +64,7 @@ The smoke job executes `bun run smoke:eval -- --config configs/harness.config.js
 `configs/harness.config.json` includes the following sections:
 
 - `adapters`: configuration for `localLlm`, `astmend`, `diffGuard`, and `memory`.
+- `adapters.*.fallbacks`: primary が技術的失敗した際に順次試行する候補設定。
 - `orchestrator`: `maxAttempts` (default 3), maximum retry attempts for one scenario. `suiteConcurrency` controls parallel scenario execution for `eval --suite`.
 - `judges`: requirements judge mode (`keyword | llm | hybrid`) and LLM thresholds/timeouts.
 - `checks`: which static analysis or tests to run.
@@ -68,3 +81,4 @@ The smoke job executes `bun run smoke:eval -- --config configs/harness.config.js
 - Each attempt stores the following files:
 - `attemptN.patch`: generated patch payload.
 - `attemptN.json`: attempt summary (feedback, apply/review results, judges, stop reason).
+- Run summary index is stored at `artifacts/runs/run-index.sqlite` (SQLite + FTS5).

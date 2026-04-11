@@ -13,8 +13,10 @@ Core modules:
 
 - `src/runner/pipeline.ts`: phase orchestration and scoring.
 - `src/adapters/*`: integration boundary for external components.
+- `src/adapters/registry.ts`: self-registering adapter registry (`generator` / `riskReviewer` / `patchApplier`).
 - `src/judges/*`: scoring and gate logic.
 - `src/reporters/*`: JSON / Markdown / SARIF artifacts.
+- `src/storage/runIndex.ts`: SQLite + FTS5 index for run metadata/search.
 - `src/schemas/*`: Zod contracts for config, scenario, and domain data.
 
 Design principles:

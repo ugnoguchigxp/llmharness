@@ -3,7 +3,14 @@ import { join, resolve } from "node:path";
 import { type ReviewableFile, reviewCode } from "./adapters/codeReviewer";
 import { loadHarnessConfig } from "./config/loadConfig";
 import { runDoctor, summarizeDoctor } from "./doctor";
-import { analyzeDiff, getCommitHashes, shouldIncludeCommit } from "./generators/diffAnalyzer";
+import {
+	analyzeDiff,
+	type CommitFilterOptions,
+	type DiffAnalysis,
+	type DiffCategory,
+	getCommitHashes,
+	shouldIncludeCommit,
+} from "./generators/diffAnalyzer";
 import { saveGoldenPatch } from "./generators/goldenPatchStore";
 import { generateRequirementsFromDiff } from "./generators/requirementsGenerator";
 import { generateScenarioFromDiff } from "./generators/scenarioGenerator";
@@ -14,6 +21,7 @@ import {
 	runSuite,
 	type ScenarioRunResult,
 } from "./runner/scenarioRunner";
+import { loadScenarioById } from "./scenarios/loadScenario";
 import {
 	parseScenarioInput,
 	parseScenarioResult,
@@ -21,6 +29,11 @@ import {
 	ScenarioSuiteSchema,
 } from "./schemas";
 import { MemoryService } from "./services/memoryService";
+import {
+	clearRunIndex,
+	indexRunResult,
+	searchRunsInIndex,
+} from "./storage/runIndex";
 import { parseArgv } from "./utils/argv";
 import { runCommand as execCommand } from "./utils/exec";
 import { writeJsonFile } from "./utils/fs";
@@ -33,6 +46,8 @@ const printHelp = (): void => {
 			"  run --scenario <id> [--config <path>] [--requirements-path <path>]",
 			"  eval --suite <smoke|regression|edge-cases|all> [--config <path>]",
 			"  report --latest [--config <path>]",
+			"  search-runs --query <text> [--limit <n>] [--config <path>]",
+			"  reindex-runs [--config <path>]",
 			"  doctor [--config <path>]",
 			"  commit-memory [--config <path>] [--message <msg>] [--push]",
 			"  generate-scenario --requirements <path> [--id <id>] [--suite <smoke|regression|edge-cases>] [--output <path>]",
@@ -143,6 +158,130 @@ const reportLatest = async (
 	console.log(join(root, latest));
 };
 
+const searchRunsCommand = async (
+	flags: Record<string, string | boolean>,
+): Promise<void> => {
+	const query = assertStringFlag(flags, "query");
+	const configPath = getOptionalConfigPath(flags);
+	const rawLimit = getOptionalStringFlag(flags, "limit");
+	const limit =
+		typeof rawLimit === "string" ? Number.parseInt(rawLimit, 10) : undefined;
+	if (
+		rawLimit &&
+		(typeof limit !== "number" || Number.isNaN(limit) || limit <= 0)
+	) {
+		throw new Error("--limit must be a positive integer.");
+	}
+
+	const config = await loadHarnessConfig(configPath);
+	const hits = await searchRunsInIndex({
+		config,
+		query,
+		limit: limit ?? 20,
+	});
+
+	if (hits.length === 0) {
+		console.log("No indexed runs matched the query.");
+		return;
+	}
+
+	console.log(`search-runs: ${hits.length} hit(s)`);
+	for (const hit of hits) {
+		const scoreText =
+			typeof hit.finalScore === "number"
+				? ` score=${hit.finalScore.toFixed(1)}`
+				: "";
+		const reqText = hit.requirementsStatus
+			? ` req=${hit.requirementsStatus}`
+			: "";
+		console.log(
+			`- ${hit.runId} ${hit.scenarioId} [${hit.suite}] decision=${hit.finalDecision}${scoreText}${reqText}`,
+		);
+		console.log(`  ${hit.runDir}`);
+		if (hit.snippet.trim().length > 0) {
+			console.log(`  ${hit.snippet}`);
+		}
+	}
+};
+
+const reindexRunsCommand = async (
+	flags: Record<string, string | boolean>,
+): Promise<void> => {
+	const configPath = getOptionalConfigPath(flags);
+	const config = await loadHarnessConfig(configPath);
+	const root = resolve(config.artifactsDir);
+
+	await clearRunIndex(config);
+
+	const dirs = await readdir(root, { withFileTypes: true }).catch(() => []);
+	const runDirs = dirs
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => entry.name)
+		.sort((a, b) => a.localeCompare(b));
+
+	let indexed = 0;
+	let skipped = 0;
+
+	for (const runId of runDirs) {
+		const runDir = join(root, runId);
+		const reportJsonPath = join(runDir, "result.json");
+		const reportMarkdownPath = join(runDir, "result.md");
+		const reportSarifPath = join(runDir, "result.sarif.json");
+		const content = await readFile(reportJsonPath, "utf8").catch(() => null);
+		if (!content) {
+			skipped += 1;
+			continue;
+		}
+
+		const parsed = tryParseJson(content);
+		if (!parsed) {
+			skipped += 1;
+			continue;
+		}
+
+		let result: ReturnType<typeof parseScenarioResult>;
+		try {
+			result = parseScenarioResult(parsed);
+		} catch {
+			skipped += 1;
+			continue;
+		}
+
+		let scenarioMeta:
+			| {
+					suite?: string;
+					title?: string;
+					instruction?: string;
+			  }
+			| undefined;
+		try {
+			const scenario = await loadScenarioById(result.scenarioId);
+			scenarioMeta = {
+				suite: scenario.suite,
+				title: scenario.title,
+				instruction: scenario.instruction,
+			};
+		} catch {
+			scenarioMeta = undefined;
+		}
+
+		await indexRunResult({
+			config,
+			result,
+			runDir,
+			reportJsonPath,
+			reportMarkdownPath,
+			reportSarifPath,
+			scenarioMeta,
+		});
+		indexed += 1;
+	}
+
+	console.log(
+		`reindex-runs completed: indexed=${indexed} skipped=${skipped} index=${join(root, "run-index.sqlite")}`,
+	);
+};
+
 const doctorCommand = async (
 	flags: Record<string, string | boolean>,
 ): Promise<void> => {
@@ -226,11 +365,28 @@ const generateFromGitCommand = async (
 
 	console.log(`Analyzing ${commitHashes.length} commit(s)...`);
 
+	const allowedCategories: DiffCategory[] = [
+		"bugfix",
+		"feature",
+		"refactor",
+		"test",
+		"docs",
+		"other",
+	];
+	const normalizedCategory = categoryFilter
+		? allowedCategories.find((c) => c === categoryFilter)
+		: undefined;
+	if (categoryFilter && !normalizedCategory) {
+		throw new Error(
+			`Unsupported --category "${categoryFilter}". Allowed: ${allowedCategories.join(", ")}`,
+		);
+	}
+
 	const generated: string[] = [];
 	const skipped: string[] = [];
 
 	for (const hash of commitHashes) {
-		let analysis;
+		let analysis: DiffAnalysis;
 		try {
 			analysis = await analyzeDiff(hash, workspaceRoot);
 		} catch (error) {
@@ -241,8 +397,8 @@ const generateFromGitCommand = async (
 			continue;
 		}
 
-		const filterOptions = categoryFilter
-			? { categories: [categoryFilter] as Parameters<typeof shouldIncludeCommit>[1]["categories"] }
+		const filterOptions: CommitFilterOptions = normalizedCategory
+			? { categories: [normalizedCategory] }
 			: {};
 
 		if (!shouldIncludeCommit(analysis, filterOptions)) {
@@ -267,7 +423,11 @@ const generateFromGitCommand = async (
 			goldenPatchOutputDir,
 		);
 
-		const scenario = generateScenarioFromDiff({ diff: analysis, suite, goldenPatchPath });
+		const scenario = generateScenarioFromDiff({
+			diff: analysis,
+			suite,
+			goldenPatchPath,
+		});
 		const requirements = generateRequirementsFromDiff(analysis);
 
 		const shortHash = hash.slice(0, 8);
@@ -288,7 +448,9 @@ const generateFromGitCommand = async (
 	);
 
 	if (shouldEval && generated.length > 0) {
-		console.log(`\nRunning eval for ${generated.length} generated scenario(s)...`);
+		console.log(
+			`\nRunning eval for ${generated.length} generated scenario(s)...`,
+		);
 		for (const scenarioId of generated) {
 			const runDir = await runSingleScenario(scenarioId, configPath);
 			console.log(`  eval: ${scenarioId} → ${runDir}`);
@@ -521,6 +683,16 @@ const main = async (): Promise<void> => {
 
 	if (command === "doctor") {
 		await doctorCommand(flags);
+		return;
+	}
+
+	if (command === "search-runs") {
+		await searchRunsCommand(flags);
+		return;
+	}
+
+	if (command === "reindex-runs") {
+		await reindexRunsCommand(flags);
 		return;
 	}
 

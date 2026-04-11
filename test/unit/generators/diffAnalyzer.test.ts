@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
-	parseNumStatLine,
 	parseDiffAnalysisFromRawOutput,
+	parseNumStatLine,
 } from "../../../src/generators/diffAnalyzer";
 
 // ---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ const LOG_FEATURE_MULTIFILE = [
 const NUMSTAT_FEATURE_MULTIFILE = [
 	"30\t0\tsrc/routes/export.ts",
 	"12\t5\tsrc/services/exportService.ts",
-	"0\t0\tassets/data.bin",   // binary file (- -)
+	"0\t0\tassets/data.bin", // binary file (- -)
 	"18\t4\ttest/routes/export.test.ts",
 ].join("\n");
 
@@ -104,10 +104,13 @@ describe("parseNumStatLine", () => {
 
 describe("parseDiffAnalysisFromRawOutput", () => {
 	test("parses a simple bugfix commit correctly", () => {
-		const result = parseDiffAnalysisFromRawOutput("abc1234567890def1234567890abcdef12345678", {
-			logOutput: LOG_BUGFIX,
-			numstatOutput: NUMSTAT_BUGFIX,
-		});
+		const result = parseDiffAnalysisFromRawOutput(
+			"abc1234567890def1234567890abcdef12345678",
+			{
+				logOutput: LOG_BUGFIX,
+				numstatOutput: NUMSTAT_BUGFIX,
+			},
+		);
 
 		expect(result.commitHash).toBe("abc1234567890def1234567890abcdef12345678");
 		expect(result.commitMessage).toBe("fix: handle null pointer in parser");
@@ -121,18 +124,24 @@ describe("parseDiffAnalysisFromRawOutput", () => {
 	});
 
 	test("detects merge commit from multiple parents", () => {
-		const result = parseDiffAnalysisFromRawOutput("merge0000000000000000000000000000000000", {
-			logOutput: LOG_MERGE,
-			numstatOutput: NUMSTAT_MERGE,
-		});
+		const result = parseDiffAnalysisFromRawOutput(
+			"merge0000000000000000000000000000000000",
+			{
+				logOutput: LOG_MERGE,
+				numstatOutput: NUMSTAT_MERGE,
+			},
+		);
 		expect(result.isMergeCommit).toBe(true);
 	});
 
 	test("parses multi-file feature commit", () => {
-		const result = parseDiffAnalysisFromRawOutput("feat0000000000000000000000000000000000ab", {
-			logOutput: LOG_FEATURE_MULTIFILE,
-			numstatOutput: NUMSTAT_FEATURE_MULTIFILE,
-		});
+		const result = parseDiffAnalysisFromRawOutput(
+			"feat0000000000000000000000000000000000ab",
+			{
+				logOutput: LOG_FEATURE_MULTIFILE,
+				numstatOutput: NUMSTAT_FEATURE_MULTIFILE,
+			},
+		);
 
 		expect(result.category).toBe("feature");
 		expect(result.files).toHaveLength(4);
@@ -141,18 +150,24 @@ describe("parseDiffAnalysisFromRawOutput", () => {
 	});
 
 	test("correctly computes complexity for moderate change", () => {
-		const result = parseDiffAnalysisFromRawOutput("feat0000000000000000000000000000000000ab", {
-			logOutput: LOG_FEATURE_MULTIFILE,
-			numstatOutput: NUMSTAT_FEATURE_MULTIFILE,
-		});
+		const result = parseDiffAnalysisFromRawOutput(
+			"feat0000000000000000000000000000000000ab",
+			{
+				logOutput: LOG_FEATURE_MULTIFILE,
+				numstatOutput: NUMSTAT_FEATURE_MULTIFILE,
+			},
+		);
 		expect(result.complexity).toBe("moderate");
 	});
 
 	test("handles renamed files", () => {
-		const result = parseDiffAnalysisFromRawOutput("ren00000000000000000000000000000000000a", {
-			logOutput: LOG_RENAMED,
-			numstatOutput: NUMSTAT_RENAMED,
-		});
+		const result = parseDiffAnalysisFromRawOutput(
+			"ren00000000000000000000000000000000000a",
+			{
+				logOutput: LOG_RENAMED,
+				numstatOutput: NUMSTAT_RENAMED,
+			},
+		);
 		expect(result.files[0]?.isRenamed).toBe(true);
 		expect(result.files[0]?.path).toBe("src/new.ts");
 	});

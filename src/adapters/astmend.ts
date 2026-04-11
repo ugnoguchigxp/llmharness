@@ -1,16 +1,16 @@
 import { resolve } from "node:path";
 import {
 	type ApplyResult,
+	type AstmendConfigCandidate,
 	type HarnessConfig,
 	parseApplyResult,
 } from "../schemas";
 import { runCommand } from "../utils/exec";
 import { postJson } from "../utils/http";
 import { tryParseJson } from "../utils/json";
+import { type PatchApplyInput, registerPatchApplier } from "./registry";
 
-export type AstmendApplyInput = {
-	patch: string;
-	targetFiles: string[];
+export type AstmendApplyInput = PatchApplyInput & {
 	config: HarnessConfig;
 };
 
@@ -148,8 +148,8 @@ const applyWithAstmendLib = async (
 	patch: string,
 	targetFiles: string[],
 	config: HarnessConfig,
+	astmendConfig: AstmendConfigCandidate,
 ): Promise<ApplyResult> => {
-	const astmendConfig = config.adapters.astmend;
 	const prepared = ensurePatchOperation(patch, targetFiles);
 	if (!prepared.operation) {
 		return parseApplyResult({
@@ -241,20 +241,59 @@ const applyWithAstmendLib = async (
 	}
 };
 
-export const applyWithAstmend = async (
+const TECHNICAL_FAILURE_TOKENS = [
+	"failed",
+	"error",
+	"timeout",
+	"not configured",
+	"invalid",
+	"unsupported",
+	"cli",
+	"api",
+	"library",
+	"endpoint",
+];
+
+const SEMANTIC_FAILURE_TOKENS = [
+	"outside targetfiles",
+	"unsafe path",
+	"ambiguous",
+	"does not include",
+	"no change was produced",
+];
+
+const collectFailureTexts = (result: ApplyResult): string[] => {
+	return [
+		...result.diagnostics,
+		...result.rejects.map((reject) => reject.reason),
+	].map((item) => item.toLowerCase());
+};
+
+const isSemanticFailure = (result: ApplyResult): boolean => {
+	const texts = collectFailureTexts(result);
+	return texts.some((text) =>
+		SEMANTIC_FAILURE_TOKENS.some((token) => text.includes(token)),
+	);
+};
+
+const isTechnicalFailure = (result: ApplyResult): boolean => {
+	const texts = collectFailureTexts(result);
+	return texts.some((text) =>
+		TECHNICAL_FAILURE_TOKENS.some((token) => text.includes(token)),
+	);
+};
+
+const shouldTryFallbackCandidate = (result: ApplyResult): boolean => {
+	if (result.success) return false;
+	if (isSemanticFailure(result)) return false;
+	return isTechnicalFailure(result);
+};
+
+const applyWithAstmendCandidate = async (
 	input: AstmendApplyInput,
+	astmendConfig: AstmendConfigCandidate,
 ): Promise<ApplyResult> => {
 	const { patch, targetFiles, config } = input;
-	const astmendConfig = config.adapters.astmend;
-
-	if (patch.trim().length === 0) {
-		return parseApplyResult({
-			success: false,
-			patchedFiles: [],
-			rejects: targetFiles.map((path) => ({ path, reason: "Empty patch" })),
-			diagnostics: ["Patch is empty."],
-		});
-	}
 
 	if (astmendConfig.mode === "api") {
 		if (!astmendConfig.endpoint) {
@@ -294,7 +333,7 @@ export const applyWithAstmend = async (
 	}
 
 	if (astmendConfig.mode === "lib") {
-		return applyWithAstmendLib(patch, targetFiles, config);
+		return applyWithAstmendLib(patch, targetFiles, config, astmendConfig);
 	}
 
 	const cliResult = await runCommand(astmendConfig.command, {
@@ -321,7 +360,12 @@ export const applyWithAstmend = async (
 
 	if (cliResult.exitCode !== 0) {
 		if (astmendConfig.enableLibFallback) {
-			const viaLib = await applyWithAstmendLib(patch, targetFiles, config);
+			const viaLib = await applyWithAstmendLib(
+				patch,
+				targetFiles,
+				config,
+				astmendConfig,
+			);
 			if (viaLib.success) {
 				return parseApplyResult({
 					...viaLib,
@@ -362,3 +406,76 @@ export const applyWithAstmend = async (
 		],
 	});
 };
+
+export const applyWithAstmend = async (
+	input: AstmendApplyInput,
+): Promise<ApplyResult> => {
+	const { patch, targetFiles, config } = input;
+	const astmendConfig = config.adapters.astmend;
+	const candidates: AstmendConfigCandidate[] = [
+		astmendConfig,
+		...astmendConfig.fallbacks,
+	];
+
+	if (patch.trim().length === 0) {
+		return parseApplyResult({
+			success: false,
+			patchedFiles: [],
+			rejects: targetFiles.map((path) => ({ path, reason: "Empty patch" })),
+			diagnostics: ["Patch is empty."],
+		});
+	}
+
+	let lastResult: ApplyResult | undefined;
+	const failures: string[] = [];
+
+	for (const [index, candidate] of candidates.entries()) {
+		const result = await applyWithAstmendCandidate(input, candidate);
+		lastResult = result;
+		if (result.success) {
+			if (index === 0) return result;
+			return parseApplyResult({
+				...result,
+				diagnostics: [
+					`Astmend succeeded via fallback candidate ${index}.`,
+					...result.diagnostics,
+				],
+			});
+		}
+
+		failures.push(
+			`candidate ${index} (${candidate.mode}): ${
+				result.diagnostics.join(" | ") ||
+				result.rejects.map((reject) => reject.reason).join(" | ") ||
+				"unknown failure"
+			}`,
+		);
+
+		const hasNext = index < candidates.length - 1;
+		if (!hasNext || !shouldTryFallbackCandidate(result)) {
+			return result;
+		}
+	}
+
+	if (lastResult) {
+		return parseApplyResult({
+			...lastResult,
+			diagnostics: [
+				...lastResult.diagnostics,
+				`All Astmend fallback candidates failed: ${failures.join(" || ")}`,
+			],
+		});
+	}
+
+	return parseApplyResult({
+		success: false,
+		patchedFiles: [],
+		rejects: targetFiles.map((path) => ({
+			path,
+			reason: "Astmend did not produce a result.",
+		})),
+		diagnostics: ["Astmend fallback execution ended without result."],
+	});
+};
+
+registerPatchApplier("astmend-json", applyWithAstmend);

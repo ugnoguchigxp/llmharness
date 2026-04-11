@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import type { ApplyResult } from "../schemas";
 import { parseApplyResult } from "../schemas";
 import { runCommand } from "../utils/exec";
-import type { AstmendApplyInput } from "./astmend";
+import { type PatchApplyInput, registerPatchApplier } from "./registry";
 
 const normalizeDiffPath = (value: string): string | undefined => {
 	const trimmed = value.trim();
@@ -83,7 +83,7 @@ const buildRejectResult = (
 	});
 
 export const applyUnifiedDiff = async (
-	input: AstmendApplyInput,
+	input: PatchApplyInput,
 ): Promise<ApplyResult> => {
 	const { patch, targetFiles, config } = input;
 	const workspaceRoot = resolve(config.workspaceRoot);
@@ -191,3 +191,5 @@ export const applyUnifiedDiff = async (
 		hunkSummary,
 	);
 };
+
+registerPatchApplier("unified-diff", applyUnifiedDiff);

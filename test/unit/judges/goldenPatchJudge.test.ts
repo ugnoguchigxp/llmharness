@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { comparePatches, runGoldenPatchJudge } from "../../../src/judges/goldenPatchJudge";
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createTempDir, cleanupTempDir } from "../../contract/utils/tempCli";
+import {
+	comparePatches,
+	runGoldenPatchJudge,
+} from "../../../src/judges/goldenPatchJudge";
+import { cleanupTempDir, createTempDir } from "../../contract/utils/tempCli";
 
 const SAMPLE_GOLDEN_PATCH = `diff --git a/src/parser.ts b/src/parser.ts
 index abc..def 100644
@@ -57,7 +60,10 @@ describe("comparePatches", () => {
 
 describe("runGoldenPatchJudge", () => {
 	test("returns fail when golden patch file does not exist", async () => {
-		const result = await runGoldenPatchJudge(MATCHING_PATCH, "/nonexistent/path.patch");
+		const result = await runGoldenPatchJudge(
+			MATCHING_PATCH,
+			"/nonexistent/path.patch",
+		);
 		expect(result.phase).toBe("golden");
 		expect(result.pass).toBe(false);
 		expect(result.reasons[0]).toContain("not found");
@@ -84,7 +90,10 @@ describe("runGoldenPatchJudge", () => {
 			const goldenPath = join(dir, "golden.patch");
 			await writeFile(goldenPath, SAMPLE_GOLDEN_PATCH, "utf-8");
 
-			const result = await runGoldenPatchJudge(DIFFERENT_FILE_PATCH, goldenPath);
+			const result = await runGoldenPatchJudge(
+				DIFFERENT_FILE_PATCH,
+				goldenPath,
+			);
 			expect(result.phase).toBe("golden");
 			expect(result.pass).toBe(false);
 		} finally {

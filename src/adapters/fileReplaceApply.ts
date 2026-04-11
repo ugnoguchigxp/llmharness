@@ -3,7 +3,7 @@ import type { ApplyResult } from "../schemas";
 import { parseApplyResult } from "../schemas";
 import { writeTextFile } from "../utils/fs";
 import { tryParseJson } from "../utils/json";
-import type { AstmendApplyInput } from "./astmend";
+import { type PatchApplyInput, registerPatchApplier } from "./registry";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
@@ -45,7 +45,7 @@ const resolveFileReplacePayload = (
 };
 
 export const applyFileReplace = async (
-	input: AstmendApplyInput,
+	input: PatchApplyInput,
 ): Promise<ApplyResult> => {
 	const { patch, targetFiles, config } = input;
 	const workspaceRoot = resolve(config.workspaceRoot);
@@ -125,3 +125,5 @@ export const applyFileReplace = async (
 		});
 	}
 };
+
+registerPatchApplier("file-replace", applyFileReplace);
