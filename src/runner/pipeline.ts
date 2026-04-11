@@ -1,9 +1,10 @@
 import { join, resolve } from "node:path";
-import { applyWithAstmend } from "../adapters/astmend";
 import { reviewWithDiffGuard } from "../adapters/diffguard";
 import { type Feedback, generateWithLocalLlm } from "../adapters/localllm";
+import { applyPatch } from "../adapters/patchRouter";
 import { reviewWithPersona } from "../adapters/personaReviewer";
 import { runBehaviorJudge } from "../judges/behaviorJudge";
+import { runLlmRequirementsJudge } from "../judges/llmRequirementsJudge";
 import { runRequirementsJudge } from "../judges/requirementsJudge";
 import { runRiskJudge } from "../judges/riskJudge";
 import { runSyntaxJudge } from "../judges/syntaxJudge";
@@ -125,6 +126,53 @@ const buildSyntheticRiskForApplyFailure = (rejectCount: number): RiskResult =>
 		blocking: false,
 	});
 
+const runRequirementsJudgeWithMode = async (
+	config: HarnessConfig,
+	requirements: RequirementsContext["requirements"] | undefined,
+	judges: JudgeResult[],
+	patch: string | undefined,
+): Promise<JudgeResult> => {
+	if (!requirements) {
+		return runRequirementsJudge(requirements, judges);
+	}
+
+	const mode = config.judges.mode;
+	if (mode === "keyword") {
+		return runRequirementsJudge(requirements, judges);
+	}
+
+	try {
+		return await runLlmRequirementsJudge(
+			requirements,
+			judges,
+			patch ?? "",
+			config,
+		);
+	} catch (error) {
+		if (mode === "llm") {
+			return parseJudgeResult({
+				phase: "requirements",
+				score: 0,
+				pass: false,
+				reasons: [
+					`LLM requirements judge failed: ${error instanceof Error ? error.message : String(error)}`,
+				],
+			});
+		}
+
+		const fallback = runRequirementsJudge(requirements, judges);
+		return parseJudgeResult({
+			...fallback,
+			reasons: [
+				...fallback.reasons,
+				`LLM requirements judge failed; used keyword fallback: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			],
+		});
+	}
+};
+
 export const runPipeline = async (
 	scenario: ScenarioInput,
 	config: HarnessConfig,
@@ -200,7 +248,7 @@ export const runPipeline = async (
 
 		let apply: ApplyResult;
 		try {
-			apply = await applyWithAstmend({
+			apply = await applyPatch({
 				patch: generate.patch,
 				targetFiles: scenario.targetFiles,
 				config,
@@ -402,7 +450,12 @@ export const runPipeline = async (
 
 	const requirements = requirementsContext?.requirements;
 
-	const requirementsJudge = runRequirementsJudge(requirements, finalJudges);
+	const requirementsJudge = await runRequirementsJudgeWithMode(
+		config,
+		requirements,
+		finalJudges,
+		finalGenerate?.patch,
+	);
 	const allJudges = [...finalJudges, requirementsJudge];
 
 	const personaReviews = await (async () => {

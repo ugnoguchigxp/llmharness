@@ -8,6 +8,7 @@ import {
 import { runCommand } from "../utils/exec";
 import { postJson } from "../utils/http";
 import { tryParseJson } from "../utils/json";
+import { detectPatchFormat } from "./patchFormat";
 
 export type Feedback = {
 	attempt: number;
@@ -88,23 +89,49 @@ const toFiniteNumber = (value: unknown): number => {
 };
 
 const buildPrompt = (input: LocalLlmInput): string => {
-	const { scenario, feedback } = input;
+	const { scenario, feedback, config } = input;
+	const format = config.adapters.astmend.patchFormat;
 	const parts = [
 		"You are a code-fix model.",
-		"Return exactly one JSON object for Astmend patch operation.",
-		'Do not include markdown fences or explanation. Output must start with "{" and end with "}".',
-		"Required top-level fields: type, file.",
-		"Allowed `type` values: update_function, update_interface, add_import, remove_import, update_constructor.",
-		"Schema hints:",
-		'- update_function: {"type":"update_function","file":"...","name":"...","changes":{"add_param":{"name":"...","type":"..."}}}',
-		'- update_interface: {"type":"update_interface","file":"...","name":"...","changes":{"add_property":{"name":"...","type":"...","optional":true}}}',
-		'- add_import/remove_import: {"type":"add_import","file":"...","module":"...","named":[{"name":"..."}]}',
-		'- update_constructor: {"type":"update_constructor","file":"...","class_name":"...","changes":{"add_param":{"name":"...","type":"..."}}}',
-		"When unsure, choose a valid add_import operation for the first target file.",
 		`Scenario ID: ${scenario.id}`,
 		`Title: ${scenario.title}`,
 		`Target files: ${scenario.targetFiles.join(", ")}`,
 	];
+
+	if (format === "astmend-json") {
+		parts.push(
+			"Return exactly one JSON object for Astmend patch operation.",
+			'Do not include markdown fences or explanation. Output must start with "{" and end with "}".',
+			"Required top-level fields: type, file.",
+			"Allowed `type` values: update_function, update_interface, add_import, remove_import, update_constructor.",
+			"Schema hints:",
+			'- update_function: {"type":"update_function","file":"...","name":"...","changes":{"add_param":{"name":"...","type":"..."}}}',
+			'- update_interface: {"type":"update_interface","file":"...","name":"...","changes":{"add_property":{"name":"...","type":"...","optional":true}}}',
+			'- add_import/remove_import: {"type":"add_import","file":"...","module":"...","named":[{"name":"..."}]}',
+			'- update_constructor: {"type":"update_constructor","file":"...","class_name":"...","changes":{"add_param":{"name":"...","type":"..."}}}',
+			"When unsure, choose a valid add_import operation for the first target file.",
+		);
+	} else if (format === "unified-diff") {
+		parts.push(
+			"Return only unified diff patch text.",
+			'Do not include markdown fences or explanation. Start directly with diff headers such as "diff --git", "---", "+++", "@@".',
+			"Patch must modify only target files.",
+		);
+	} else if (format === "file-replace") {
+		parts.push(
+			"Return one JSON object with full replacement content.",
+			'Do not include markdown fences or explanation. Output must start with "{" and end with "}".',
+			'Schema: {"file":"<target-file>","content":"<entire updated file content>"}',
+			"Patch must modify only target files.",
+		);
+	} else {
+		parts.push(
+			"Return a patch in one of these formats: Astmend operation JSON, unified diff, or file-replace JSON.",
+			"When possible, prefer unified diff for multi-line edits.",
+			"Patch must modify only target files.",
+			"Do not include markdown fences or explanation.",
+		);
+	}
 
 	if (feedback) {
 		parts.push(`[Retry Feedback (Attempt ${feedback.attempt})]`);
@@ -171,7 +198,7 @@ const fallbackOperation = (
 	};
 };
 
-const normalizePatchOperation = (
+const normalizeAstmendPatchOperation = (
 	rawPatch: string,
 	scenario: ScenarioInput,
 ): string => {
@@ -269,9 +296,31 @@ const normalizePatchOperation = (
 	return JSON.stringify(fallbackOperation(scenario));
 };
 
+const normalizeGeneratedPatch = (
+	rawPatch: string,
+	scenario: ScenarioInput,
+	config: HarnessConfig,
+): string => {
+	const trimmed = rawPatch.trim();
+	if (trimmed.length === 0) {
+		return JSON.stringify(fallbackOperation(scenario));
+	}
+
+	const configuredFormat = config.adapters.astmend.patchFormat;
+	const resolvedFormat =
+		configuredFormat === "auto" ? detectPatchFormat(trimmed) : configuredFormat;
+
+	if (resolvedFormat === "astmend-json") {
+		return normalizeAstmendPatchOperation(trimmed, scenario);
+	}
+
+	return trimmed;
+};
+
 const parseCliOutput = (
 	stdout: string,
 	scenario: ScenarioInput,
+	config: HarnessConfig,
 ): GenerateResult => {
 	const parsed = tryParseJson(stdout);
 	if (isRecord(parsed)) {
@@ -283,14 +332,14 @@ const parseCliOutput = (
 					: undefined;
 		if (!patch) {
 			return parseGenerateResult({
-				patch: normalizePatchOperation(stdout.trim(), scenario),
+				patch: normalizeGeneratedPatch(stdout.trim(), scenario, config),
 				summary: `CLI generation for ${scenario.id}`,
 				rawResponse: parsed,
 			});
 		}
 
 		return parseGenerateResult({
-			patch: normalizePatchOperation(patch, scenario),
+			patch: normalizeGeneratedPatch(patch, scenario, config),
 			summary:
 				typeof parsed.summary === "string"
 					? parsed.summary
@@ -314,7 +363,7 @@ const parseCliOutput = (
 	}
 
 	return parseGenerateResult({
-		patch: normalizePatchOperation(patch, scenario),
+		patch: normalizeGeneratedPatch(patch, scenario, config),
 		summary: `CLI generation for ${scenario.id}`,
 	});
 };
@@ -371,7 +420,7 @@ export const generateWithLocalLlm = async (
 		}
 
 		return parseGenerateResult({
-			patch: normalizePatchOperation(content, scenario),
+			patch: normalizeGeneratedPatch(content, scenario, config),
 			summary: `API generation for ${scenario.id}`,
 			tokenUsage: response.usage
 				? {
@@ -407,5 +456,5 @@ export const generateWithLocalLlm = async (
 		);
 	}
 
-	return parseCliOutput(cliResult.stdout, scenario);
+	return parseCliOutput(cliResult.stdout, scenario, config);
 };

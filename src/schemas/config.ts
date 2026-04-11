@@ -4,6 +4,13 @@ export const LocalLlmModeSchema = z.enum(["api", "cli"]);
 export const AstmendModeSchema = z.enum(["api", "cli", "lib"]);
 export const DiffGuardModeSchema = z.enum(["api", "cli"]);
 export const PromptModeSchema = z.enum(["stdin", "arg"]);
+export const PatchFormatSchema = z.enum([
+	"auto",
+	"astmend-json",
+	"unified-diff",
+	"file-replace",
+]);
+export const JudgeModeSchema = z.enum(["keyword", "llm", "hybrid"]);
 
 export const LocalLlmConfigSchema = z
 	.object({
@@ -29,6 +36,7 @@ export const AstmendConfigSchema = z
 		enableLibFallback: z.boolean().default(true),
 		libEntrypoint: z.string().min(1).default("../Astmend/dist/index.js"),
 		timeoutMs: z.number().int().positive().default(15000),
+		patchFormat: PatchFormatSchema.default("auto"),
 	})
 	.strict();
 
@@ -89,6 +97,26 @@ export const HarnessScoringConfigSchema = z
 export const OrchestratorConfigSchema = z
 	.object({
 		maxAttempts: z.number().int().positive().default(3),
+		suiteConcurrency: z.number().int().positive().default(1),
+	})
+	.strict();
+
+export const JudgeLlmConfigSchema = z
+	.object({
+		apiBaseUrl: z.string().url().optional(),
+		apiPath: z.string().min(1).default("/v1/chat/completions"),
+		apiKeyEnv: z.string().min(1).default("LOCAL_LLM_API_KEY"),
+		model: z.string().min(1).default("default"),
+		timeoutMs: z.number().int().positive().default(60000),
+		temperature: z.number().min(0).max(2).default(0),
+	})
+	.strict();
+
+export const JudgeConfigSchema = z
+	.object({
+		mode: JudgeModeSchema.default("keyword"),
+		confidenceThreshold: z.number().min(0).max(1).default(0.5),
+		llm: JudgeLlmConfigSchema.optional(),
 	})
 	.strict();
 
@@ -119,6 +147,11 @@ export const HarnessConfigSchema = z
 			.strict(),
 		orchestrator: OrchestratorConfigSchema.default({
 			maxAttempts: 3,
+			suiteConcurrency: 1,
+		}),
+		judges: JudgeConfigSchema.default({
+			mode: "keyword",
+			confidenceThreshold: 0.5,
 		}),
 		checks: HarnessChecksConfigSchema.default({
 			runTypecheck: true,
@@ -141,10 +174,14 @@ export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
 export type LocalLlmMode = z.infer<typeof LocalLlmModeSchema>;
 export type AstmendMode = z.infer<typeof AstmendModeSchema>;
 export type DiffGuardMode = z.infer<typeof DiffGuardModeSchema>;
+export type PatchFormat = z.infer<typeof PatchFormatSchema>;
+export type JudgeMode = z.infer<typeof JudgeModeSchema>;
 export type LocalLlmConfig = z.infer<typeof LocalLlmConfigSchema>;
 export type AstmendConfig = z.infer<typeof AstmendConfigSchema>;
 export type DiffGuardConfig = z.infer<typeof DiffGuardConfigSchema>;
 export type HarnessChecksConfig = z.infer<typeof HarnessChecksConfigSchema>;
 export type HarnessScoringConfig = z.infer<typeof HarnessScoringConfigSchema>;
 export type OrchestratorConfig = z.infer<typeof OrchestratorConfigSchema>;
+export type JudgeLlmConfig = z.infer<typeof JudgeLlmConfigSchema>;
+export type JudgeConfig = z.infer<typeof JudgeConfigSchema>;
 export type HarnessConfig = z.infer<typeof HarnessConfigSchema>;

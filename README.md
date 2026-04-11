@@ -30,6 +30,7 @@ TypeScript + Bun で構築した LLM 修正評価ハーネスです。`localLlm`
   - `api`: `endpoint + apiPath` へ `POST { patch, targetFiles }`
   - `cli`: `adapters.astmend.command` を実行し、stdin に patch を渡す（失敗時は `libEntrypoint` によるライブラリフォールバック）
   - `lib`: `libEntrypoint` を直接 import して `applyPatchFromFile` を実行（推奨）
+  - `patchFormat`: `auto | astmend-json | unified-diff | file-replace`（`auto` は生成パッチを自動判定して適用ルーターに委譲）
 - `diffGuard`
   - `api`: `endpoint + apiPath` へ `POST { patch }`
   - `cli`: `adapters.diffGuard.command` を実行し、stdin に patch を渡す
@@ -108,7 +109,13 @@ eval completed: 5 scenario(s)
 
 ### A-2: SuccessCriteria Judge
 
-requirements の `successCriteria` と judge の `reasons` をキーワードマッチングで照合し、`requirements` フェーズの `JudgeResult` を生成します。達成率が 50% 以上で `pass`。
+requirements の `successCriteria` 判定は `judges.mode` で切り替えられます。
+
+- `keyword`（既定）: judge の `reasons` とキーワード照合
+- `llm`: localLlm を judge として使い、criterion ごとの `pass/confidence/reasoning` を評価
+- `hybrid`: LLM 評価に失敗した場合は `keyword` にフォールバック
+
+達成率が 50% 以上で `pass` です。
 
 ### A-3: Revision Suggester
 

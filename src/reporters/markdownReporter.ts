@@ -3,10 +3,19 @@ import { writeTextFile } from "../utils/fs";
 
 const renderJudgeLines = (result: ScenarioResult): string => {
 	return result.judges
-		.map(
-			(j) =>
-				`- ${j.phase}: pass=${String(j.pass)} score=${j.score} reasons=${j.reasons.join(" | ")}`,
-		)
+		.map((j) => {
+			const base = `- ${j.phase}: pass=${String(j.pass)} score=${j.score} reasons=${j.reasons.join(" | ")}`;
+			if (!j.criterionEvaluations || j.criterionEvaluations.length === 0) {
+				return base;
+			}
+			const evalLines = j.criterionEvaluations
+				.map(
+					(e) =>
+						`  - [${e.pass ? "pass" : "fail"}] "${e.criterion}" (confidence: ${e.confidence.toFixed(2)}): ${e.reasoning}`,
+				)
+				.join("\n");
+			return `${base}\n${evalLines}`;
+		})
 		.join("\n");
 };
 
