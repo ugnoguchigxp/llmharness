@@ -3,6 +3,7 @@ import { reviewWithDiffGuard } from "../adapters/diffguard";
 import { type Feedback, generateWithLocalLlm } from "../adapters/localllm";
 import { applyPatch } from "../adapters/patchRouter";
 import { reviewWithPersona } from "../adapters/personaReviewer";
+import { collectContext } from "../context/contextCollector";
 import { runBehaviorJudge } from "../judges/behaviorJudge";
 import { runLlmRequirementsJudge } from "../judges/llmRequirementsJudge";
 import { runRequirementsJudge } from "../judges/requirementsJudge";
@@ -191,6 +192,11 @@ export const runPipeline = async (
 		memoryContext = await memory.recall(scenario.instruction);
 	}
 
+	const contextData = await collectContext(scenario, config).catch(() => ({
+		files: [],
+		totalTokenEstimate: 0,
+	}));
+
 	const maxAttempts = config.orchestrator.maxAttempts;
 	const attempts: AttemptResult[] = [];
 	const artifacts: ScenarioResult["artifacts"] = [];
@@ -219,6 +225,7 @@ export const runPipeline = async (
 				config,
 				memoryContext,
 				feedback,
+				contextData,
 			});
 		} catch (error) {
 			const reason = `Generation failed [attempt ${attemptIdx}]: ${error instanceof Error ? error.message : String(error)}`;

@@ -23,8 +23,17 @@ export const parseArgv = (argv: string[]): ParsedArgs => {
 			continue;
 		}
 
-		flags[key] = next;
+		// collect all consecutive non-flag values as a space-joined string
+		const values: string[] = [next];
 		i += 1;
+		while (i + 1 < rest.length) {
+			const lookahead = rest[i + 1];
+			if (!lookahead || lookahead.startsWith("--")) break;
+			values.push(lookahead);
+			i += 1;
+		}
+
+		flags[key] = values.join(" ");
 	}
 
 	return { command, flags };

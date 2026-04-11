@@ -20,6 +20,7 @@ import { type ScenarioInput, ScenarioInputSchema } from "./scenario";
 export * from "./config";
 export * from "./domain";
 export * from "./requirements";
+export * from "./review";
 export * from "./scenario";
 
 const formatIssuePath = (path: PropertyKey[]): string =>

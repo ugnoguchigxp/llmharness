@@ -9,34 +9,49 @@ const normalizeDiffPath = (value: string): string | undefined => {
 	if (trimmed.length === 0 || trimmed === "/dev/null") {
 		return undefined;
 	}
-	const noTimestamp = trimmed.split(/\s+/)[0];
-	if (!noTimestamp) {
+	const pathPart = trimmed.split("\t")[0]?.trim();
+	if (!pathPart || pathPart.length === 0) {
 		return undefined;
 	}
-	return noTimestamp.replace(/^[ab]\//, "");
+	return pathPart.replace(/^"(.+)"$/, "$1").replace(/^[ab]\//, "");
 };
+
+const normalizeComparablePath = (value: string): string =>
+	value.replace(/\\/g, "/").replace(/^\.\//, "");
 
 const parsePatchedFilesFromDiff = (patch: string): string[] => {
 	const files: string[] = [];
 	for (const line of patch.split("\n")) {
-		if (line.startsWith("+++ ")) {
+		if (line.startsWith("+++ ") || line.startsWith("--- ")) {
 			const maybePath = normalizeDiffPath(line.slice(4));
-			if (maybePath && !files.includes(maybePath)) {
-				files.push(maybePath);
-			}
-			continue;
-		}
-
-		if (line.startsWith("diff --git ")) {
-			const parts = line.trim().split(/\s+/);
-			const maybePath =
-				parts.length >= 4 ? normalizeDiffPath(parts[3] ?? "") : undefined;
 			if (maybePath && !files.includes(maybePath)) {
 				files.push(maybePath);
 			}
 		}
 	}
 	return files;
+};
+
+const extractHunkSummary = (patch: string): string | undefined => {
+	const matches = patch.match(
+		/@@[\s\S]*?(?=\n@@|\n(?:diff --git |--- |\+\+\+ )|$)/g,
+	);
+	if (!matches || matches.length === 0) {
+		return undefined;
+	}
+	const normalized = matches
+		.map((item) => item.trim())
+		.filter((item) => item.length > 0);
+	if (normalized.length === 0) {
+		return undefined;
+	}
+	const MAX_HUNKS = 5;
+	const trimmed = normalized.slice(0, MAX_HUNKS);
+	const suffix =
+		normalized.length > MAX_HUNKS
+			? `\n... (${normalized.length - MAX_HUNKS} more hunks omitted)`
+			: "";
+	return `${trimmed.join("\n---\n")}${suffix}`;
 };
 
 const isWorkspaceSafe = (
@@ -52,6 +67,7 @@ const buildRejectResult = (
 	impactedFiles: string[],
 	reason: string,
 	diagnostics: string[],
+	hunk?: string,
 ): ApplyResult =>
 	parseApplyResult({
 		success: false,
@@ -60,6 +76,7 @@ const buildRejectResult = (
 			(path) => ({
 				path,
 				reason,
+				hunk,
 			}),
 		),
 		diagnostics,
@@ -70,7 +87,13 @@ export const applyUnifiedDiff = async (
 ): Promise<ApplyResult> => {
 	const { patch, targetFiles, config } = input;
 	const workspaceRoot = resolve(config.workspaceRoot);
-	const impactedFiles = parsePatchedFilesFromDiff(patch);
+	const hunkSummary = extractHunkSummary(patch);
+	const targetPathLookup = new Map(
+		targetFiles.map((path) => [normalizeComparablePath(path), path]),
+	);
+	const impactedFiles = parsePatchedFilesFromDiff(patch).map((path) =>
+		normalizeComparablePath(path),
+	);
 
 	if (impactedFiles.length === 0) {
 		return buildRejectResult(
@@ -78,11 +101,12 @@ export const applyUnifiedDiff = async (
 			[],
 			"Unified diff does not include file headers.",
 			["Unified diff parse failed: no +++ or diff --git file headers."],
+			hunkSummary,
 		);
 	}
 
 	const outsideTarget = impactedFiles.find(
-		(file) => !targetFiles.includes(file),
+		(file) => !targetPathLookup.has(file),
 	);
 	if (outsideTarget) {
 		return buildRejectResult(
@@ -90,6 +114,7 @@ export const applyUnifiedDiff = async (
 			[outsideTarget],
 			"Patch touches file outside scenario targetFiles.",
 			[`Rejected unified diff for ${outsideTarget}; outside targetFiles.`],
+			hunkSummary,
 		);
 	}
 
@@ -102,6 +127,7 @@ export const applyUnifiedDiff = async (
 			[unsafeFile],
 			"Patch path resolves outside workspaceRoot.",
 			["Rejected unified diff with unsafe path."],
+			hunkSummary,
 		);
 	}
 
@@ -142,12 +168,15 @@ export const applyUnifiedDiff = async (
 				impactedFiles,
 				"Unified diff apply command failed.",
 				[`patch -p${stripLevel} failed: ${reason}`],
+				hunkSummary,
 			);
 		}
 
 		return parseApplyResult({
 			success: true,
-			patchedFiles: impactedFiles,
+			patchedFiles: impactedFiles.map(
+				(path) => targetPathLookup.get(path) ?? path,
+			),
 			rejects: [],
 			diagnostics: [`Unified diff applied with patch -p${stripLevel}.`],
 			diff: patch,
@@ -159,5 +188,6 @@ export const applyUnifiedDiff = async (
 		impactedFiles,
 		"Unified diff dry-run failed.",
 		[lastDryRunError],
+		hunkSummary,
 	);
 };

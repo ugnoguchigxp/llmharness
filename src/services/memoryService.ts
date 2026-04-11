@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import type { HarnessConfig, ScenarioResult } from "../schemas";
+import type { CodeReviewResult } from "../schemas/review";
 import { runCommand } from "../utils/exec";
 
 const shellQuote = (value: string): string => {
@@ -128,6 +129,56 @@ export class MemoryService {
 					scenarioId,
 					score,
 					requirementsSummary: result.requirementsSummary,
+				}),
+			],
+			{ strict: true },
+		);
+	}
+
+	async ingestReview(result: CodeReviewResult): Promise<void> {
+		const { memory } = this.config.adapters;
+		if (!memory.enabled) return;
+
+		const findingsText =
+			result.findings.length > 0
+				? result.findings
+						.map((f) => {
+							const loc = f.file
+								? f.line
+									? ` ${f.file}:${f.line}`
+									: ` ${f.file}`
+								: "";
+							const suggestion = f.suggestion ? `\n  → ${f.suggestion}` : "";
+							return `[${f.severity}]${loc}: ${f.message}${suggestion}`;
+						})
+						.join("\n")
+				: "(no findings)";
+
+		const contentParts = [
+			`Code Review: ${result.reviewedFiles.join(", ")}`,
+			`Overall: ${result.overallAssessment}`,
+			`Reviewed At: ${result.reviewedAt}`,
+			result.model ? `Model: ${result.model}` : null,
+			"",
+			`Summary: ${result.summary}`,
+			"",
+			"Findings:",
+			findingsText,
+		].filter((line): line is string => line !== null);
+
+		await this.runGnosisScript(
+			"ingest-verified",
+			[
+				"--content",
+				contentParts.join("\n"),
+				"--session-id",
+				`${memory.sessionId}-reviews`,
+				"--metadata",
+				JSON.stringify({
+					files: result.reviewedFiles,
+					overallAssessment: result.overallAssessment,
+					findingsCount: result.findings.length,
+					reviewedAt: result.reviewedAt,
 				}),
 			],
 			{ strict: true },

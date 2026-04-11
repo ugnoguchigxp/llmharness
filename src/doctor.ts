@@ -168,6 +168,44 @@ const checkRequirementsFiles = async (
 	return items;
 };
 
+const checkPatchBinary = async (
+	config: HarnessConfig,
+	cwd: string,
+): Promise<HealthItem | undefined> => {
+	const patchFormat = config.adapters.astmend.patchFormat;
+	if (patchFormat === "astmend-json" || patchFormat === "file-replace") {
+		return undefined;
+	}
+
+	const probe = await runCommand("command -v patch", {
+		cwd,
+		timeoutMs: 5000,
+	});
+	if (probe.exitCode === 0 && probe.stdout.trim().length > 0) {
+		return {
+			name: "patch.binary",
+			status: "ok",
+			message: `binary found: ${probe.stdout.trim()}`,
+		};
+	}
+
+	if (patchFormat === "unified-diff") {
+		return {
+			name: "patch.binary",
+			status: "error",
+			message:
+				"binary not found: patch (required when adapters.astmend.patchFormat=unified-diff)",
+		};
+	}
+
+	return {
+		name: "patch.binary",
+		status: "warn",
+		message:
+			"binary not found: patch (auto mode may fail on unified-diff payloads)",
+	};
+};
+
 export const runDoctor = async (
 	config: HarnessConfig,
 ): Promise<HealthItem[]> => {
@@ -257,6 +295,10 @@ export const runDoctor = async (
 	}
 
 	items.push(checkLocalLlmApiKey(config));
+	const patchBinary = await checkPatchBinary(config, cwd);
+	if (patchBinary) {
+		items.push(patchBinary);
+	}
 	items.push(...(await checkRequirementsFiles(cwd)));
 	return items;
 };

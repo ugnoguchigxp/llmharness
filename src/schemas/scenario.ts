@@ -27,6 +27,7 @@ export const ScenarioInputSchema = z
 			minScore: 80,
 		}),
 		requirementsPath: z.string().optional(),
+		contextFiles: z.array(z.string().min(1)).optional(),
 	})
 	.strict();
 

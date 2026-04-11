@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { type ReviewableFile, reviewCode } from "./adapters/codeReviewer";
 import { loadHarnessConfig } from "./config/loadConfig";
 import { runDoctor, summarizeDoctor } from "./doctor";
 import { loadRequirements } from "./requirements/loadRequirements";
@@ -31,6 +32,7 @@ const printHelp = (): void => {
 			"  doctor [--config <path>]",
 			"  commit-memory [--config <path>] [--message <msg>] [--push]",
 			"  generate-scenario --requirements <path> [--id <id>] [--suite <smoke|regression|edge-cases>] [--output <path>]",
+			"  code-review (--files <file1> [file2...] | --git-diff [--staged]) [--save] [--output <path>] [--config <path>]",
 		].join("\n"),
 	);
 };
@@ -181,6 +183,121 @@ const generateScenarioCommand = async (
 	console.log(`generate-scenario: wrote ${resolved}`);
 };
 
+const codeReviewCommand = async (
+	flags: Record<string, string | boolean>,
+): Promise<void> => {
+	const configPath = getOptionalConfigPath(flags);
+	const config = await loadHarnessConfig(configPath);
+
+	const isGitDiff = isTruthyFlag(flags["git-diff"]);
+	const isStaged = isTruthyFlag(flags.staged);
+	const shouldSave = isTruthyFlag(flags.save);
+	const outputPath = getOptionalStringFlag(flags, "output");
+
+	const hasFiles =
+		typeof flags.files === "string" && flags.files.trim().length > 0;
+
+	if (isGitDiff && hasFiles) {
+		throw new Error(
+			"--files and --git-diff are mutually exclusive. Use one or the other.",
+		);
+	}
+
+	let filePaths: string[] = [];
+
+	if (isGitDiff) {
+		const diffArgs = isStaged
+			? "git diff --cached --name-only"
+			: "git diff --name-only";
+		const result = await execCommand(diffArgs, {
+			cwd: resolve(config.workspaceRoot),
+			timeoutMs: 10000,
+		});
+		if (result.exitCode !== 0) {
+			throw new Error(`git diff failed: ${result.stderr || result.stdout}`);
+		}
+		filePaths = result.stdout
+			.split("\n")
+			.map((p) => p.trim())
+			.filter((p) => p.length > 0);
+		if (filePaths.length === 0) {
+			console.log("No changed files found.");
+			return;
+		}
+	} else {
+		if (!hasFiles) {
+			throw new Error(
+				"code-review requires --files <file1> [file2...] or --git-diff",
+			);
+		}
+		const rawFiles = flags.files as string;
+		filePaths = rawFiles
+			.split(/[\s,]+/)
+			.map((p) => p.trim())
+			.filter((p) => p.length > 0);
+	}
+
+	const workspaceRoot = resolve(config.workspaceRoot);
+	const reviewableFiles: ReviewableFile[] = [];
+	for (const filePath of filePaths) {
+		const absPath = resolve(workspaceRoot, filePath);
+		const content = await readFile(absPath, "utf8").catch(() => null);
+		if (content === null) {
+			console.warn(`  [skip] ${filePath}: file not found`);
+			continue;
+		}
+		reviewableFiles.push({ path: filePath, content });
+	}
+
+	if (reviewableFiles.length === 0) {
+		console.log("No readable files to review.");
+		return;
+	}
+
+	console.log(
+		`Running code review on ${reviewableFiles.length} file(s):\n${reviewableFiles.map((f) => `  - ${f.path}`).join("\n")}`,
+	);
+
+	const reviewResult = await reviewCode({ files: reviewableFiles, config });
+
+	console.log(`\nOverall: ${reviewResult.overallAssessment}`);
+	console.log(`Summary: ${reviewResult.summary}`);
+	if (reviewResult.findings.length > 0) {
+		console.log(`\nFindings (${reviewResult.findings.length}):`);
+		for (const finding of reviewResult.findings) {
+			const loc = finding.file
+				? finding.line
+					? ` ${finding.file}:${finding.line}`
+					: ` ${finding.file}`
+				: "";
+			console.log(`  [${finding.severity}]${loc}: ${finding.message}`);
+			if (finding.suggestion) {
+				console.log(`    → ${finding.suggestion}`);
+			}
+		}
+	} else {
+		console.log("\nNo findings.");
+	}
+
+	if (outputPath) {
+		const resolved = resolve(outputPath);
+		await writeJsonFile(resolved, reviewResult);
+		console.log(`\nReview saved to: ${resolved}`);
+	}
+
+	if (shouldSave) {
+		if (!config.adapters.memory.enabled) {
+			console.warn(
+				"Memory adapter is disabled. Set adapters.memory.enabled=true to save to Gnosis.",
+			);
+		} else {
+			const memory = new MemoryService(config);
+			await memory.ingestReview(reviewResult);
+			console.log("Review ingested into Gnosis.");
+		}
+	}
+};
+
 const commitMemoryCommand = async (
 	flags: Record<string, string | boolean>,
 ): Promise<void> => {
@@ -301,6 +418,11 @@ const main = async (): Promise<void> => {
 
 	if (command === "generate-scenario") {
 		await generateScenarioCommand(flags);
+		return;
+	}
+
+	if (command === "code-review") {
+		await codeReviewCommand(flags);
 		return;
 	}
 

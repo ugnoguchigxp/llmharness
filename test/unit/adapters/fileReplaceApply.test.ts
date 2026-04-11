@@ -65,4 +65,71 @@ describe("applyFileReplace", () => {
 			await cleanupTempDir(dir);
 		}
 	});
+
+	test("applies JSON payload with file and content fields", async () => {
+		const dir = await createTempDir("llmharness-file-replace-3");
+		try {
+			await mkdir(join(dir, "src"), { recursive: true });
+			const target = join(dir, "src/index.ts");
+			await writeFile(target, "export const before = true;\n", "utf-8");
+			const config = parseHarnessConfig({
+				runtime: "bun",
+				workspaceRoot: dir,
+				adapters: {
+					localLlm: { mode: "cli", command: "echo '{}'", model: "test-model" },
+					astmend: { mode: "lib", libEntrypoint: "./unused.mjs" },
+					diffGuard: { mode: "cli", command: "echo '{}'" },
+				},
+			});
+
+			const result = await applyFileReplace({
+				patch: JSON.stringify({
+					file: "src/index.ts",
+					content: "export const after = 'json';\n",
+				}),
+				targetFiles: ["src/index.ts"],
+				config,
+			});
+
+			expect(result.success).toBe(true);
+			const updated = await readFile(target, "utf-8");
+			expect(updated).toContain("after = 'json'");
+		} finally {
+			await cleanupTempDir(dir);
+		}
+	});
+
+	test("accepts equivalent path with leading ./ in targetFiles", async () => {
+		const dir = await createTempDir("llmharness-file-replace-4");
+		try {
+			await mkdir(join(dir, "src"), { recursive: true });
+			const target = join(dir, "src/index.ts");
+			await writeFile(target, "export const before = true;\n", "utf-8");
+			const config = parseHarnessConfig({
+				runtime: "bun",
+				workspaceRoot: dir,
+				adapters: {
+					localLlm: { mode: "cli", command: "echo '{}'", model: "test-model" },
+					astmend: { mode: "lib", libEntrypoint: "./unused.mjs" },
+					diffGuard: { mode: "cli", command: "echo '{}'" },
+				},
+			});
+
+			const result = await applyFileReplace({
+				patch: JSON.stringify({
+					file: "src/index.ts",
+					content: "export const after = 'normalized';\n",
+				}),
+				targetFiles: ["./src/index.ts"],
+				config,
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.patchedFiles).toEqual(["./src/index.ts"]);
+			const updated = await readFile(target, "utf-8");
+			expect(updated).toContain("normalized");
+		} finally {
+			await cleanupTempDir(dir);
+		}
+	});
 });

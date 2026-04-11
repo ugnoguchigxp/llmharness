@@ -101,6 +101,16 @@ export const OrchestratorConfigSchema = z
 	})
 	.strict();
 
+export const ContextConfigSchema = z
+	.object({
+		enabled: z.boolean().default(true),
+		maxContextTokens: z.number().int().positive().default(4000),
+		includeImports: z.boolean().default(true),
+		includeTests: z.boolean().default(true),
+		maxFileLines: z.number().int().positive().default(500),
+	})
+	.strict();
+
 export const JudgeLlmConfigSchema = z
 	.object({
 		apiBaseUrl: z.string().url().optional(),
@@ -153,6 +163,13 @@ export const HarnessConfigSchema = z
 			mode: "keyword",
 			confidenceThreshold: 0.5,
 		}),
+		context: ContextConfigSchema.default({
+			enabled: true,
+			maxContextTokens: 4000,
+			includeImports: true,
+			includeTests: true,
+			maxFileLines: 500,
+		}),
 		checks: HarnessChecksConfigSchema.default({
 			runTypecheck: true,
 			typecheckCommand: "bun run typecheck",
@@ -182,6 +199,7 @@ export type DiffGuardConfig = z.infer<typeof DiffGuardConfigSchema>;
 export type HarnessChecksConfig = z.infer<typeof HarnessChecksConfigSchema>;
 export type HarnessScoringConfig = z.infer<typeof HarnessScoringConfigSchema>;
 export type OrchestratorConfig = z.infer<typeof OrchestratorConfigSchema>;
+export type ContextConfig = z.infer<typeof ContextConfigSchema>;
 export type JudgeLlmConfig = z.infer<typeof JudgeLlmConfigSchema>;
 export type JudgeConfig = z.infer<typeof JudgeConfigSchema>;
 export type HarnessConfig = z.infer<typeof HarnessConfigSchema>;
