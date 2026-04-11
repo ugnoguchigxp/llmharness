@@ -8,5 +8,6 @@
 		"mustPassTests": [],
 		"maxRiskErrors": 0,
 		"minScore": 80
-	}
+	},
+	"requirementsPath": "requirements/regression-001.requirements.json"
 }

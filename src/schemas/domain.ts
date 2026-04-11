@@ -68,6 +68,7 @@ export const JudgePhaseSchema = z.enum([
 	"apply",
 	"review",
 	"test",
+	"requirements",
 	"final",
 ]);
 
@@ -90,6 +91,26 @@ export const ArtifactSchema = z
 	.strict();
 
 export const FinalDecisionSchema = z.enum(["pass", "fail", "error"]);
+
+export const PersonaReviewResultSchema = z
+	.object({
+		personaName: z.string().min(1),
+		personaRole: z.string().optional(),
+		feedback: z.string().min(1),
+		pass: z.boolean(),
+	})
+	.strict();
+
+export const RequirementsSummarySchema = z
+	.object({
+		id: z.string().min(1),
+		title: z.string().min(1),
+		loaded: z.boolean(),
+		validationStatus: z.enum(["valid", "invalid", "not_found"]),
+		successCriteriaCount: z.number().int().nonnegative(),
+		reviewPersonasCount: z.number().int().nonnegative(),
+	})
+	.strict();
 
 export const OrchestratorStateSchema = z
 	.object({
@@ -123,6 +144,9 @@ export const ScenarioResultSchema = z
 		judges: z.array(JudgeResultSchema).default([]),
 		attempts: z.array(AttemptResultSchema).default([]),
 		orchestratorState: OrchestratorStateSchema.optional(),
+		requirementsSummary: RequirementsSummarySchema.optional(),
+		personaReviews: z.array(PersonaReviewResultSchema).default([]),
+		revisionSuggestions: z.array(z.string().min(1)).default([]),
 	})
 	.strict();
 
@@ -137,6 +161,8 @@ export type JudgePhase = z.infer<typeof JudgePhaseSchema>;
 export type JudgeResult = z.infer<typeof JudgeResultSchema>;
 export type Artifact = z.infer<typeof ArtifactSchema>;
 export type FinalDecision = z.infer<typeof FinalDecisionSchema>;
+export type PersonaReviewResult = z.infer<typeof PersonaReviewResultSchema>;
+export type RequirementsSummary = z.infer<typeof RequirementsSummarySchema>;
 export type ScenarioResult = z.infer<typeof ScenarioResultSchema>;
 export type OrchestratorState = z.infer<typeof OrchestratorStateSchema>;
 export type AttemptResult = z.infer<typeof AttemptResultSchema>;

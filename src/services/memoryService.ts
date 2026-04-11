@@ -87,22 +87,48 @@ export class MemoryService {
 
 		const patch = result.generate?.patch ?? "(no patch captured)";
 		const score = result.judges.find((judge) => judge.phase === "final")?.score;
-		const content = [
+
+		const requirementsLines: string[] = [];
+		if (result.requirementsSummary) {
+			const s = result.requirementsSummary;
+			requirementsLines.push(
+				`Requirements: ${s.title} [${s.validationStatus}]`,
+				`  successCriteria: ${s.successCriteriaCount}, personas: ${s.reviewPersonasCount}`,
+			);
+		}
+
+		const personaLines: string[] = [];
+		for (const review of result.personaReviews ?? []) {
+			const role = review.personaRole ? ` (${review.personaRole})` : "";
+			personaLines.push(
+				`  ${review.personaName}${role}: pass=${String(review.pass)} — ${review.feedback}`,
+			);
+		}
+		if (personaLines.length > 0) {
+			requirementsLines.push("Persona Reviews:", ...personaLines);
+		}
+
+		const contentParts = [
 			`Scenario: ${scenarioId}`,
 			`Final Decision: ${result.finalDecision}`,
-			`Generated Patch:`,
+			...requirementsLines,
+			"Generated Patch:",
 			patch,
-		].join("\n\n");
+		];
 
 		await this.runGnosisScript(
 			"ingest-verified",
 			[
 				"--content",
-				content,
+				contentParts.join("\n\n"),
 				"--session-id",
 				`${memory.sessionId}-verified`,
 				"--metadata",
-				JSON.stringify({ scenarioId, score }),
+				JSON.stringify({
+					scenarioId,
+					score,
+					requirementsSummary: result.requirementsSummary,
+				}),
 			],
 			{ strict: true },
 		);

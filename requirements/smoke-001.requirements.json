@@ -1,0 +1,38 @@
+{
+	"id": "smoke-001-req",
+	"title": "Basic harness flow: smoke validation",
+	"task": "Verify that the harness can execute a minimal safe patch end-to-end without errors.",
+	"audience": "CI pipeline / developers running a quick sanity check",
+	"constraints": [
+		"Patch must apply cleanly without rejects",
+		"No blocking risk findings are allowed",
+		"Total score must reach the configured minimum threshold"
+	],
+	"successCriteria": [
+		"Pipeline completes without throwing an unhandled error",
+		"finalDecision is 'pass' or 'fail' (not 'error')",
+		"At least one judge result is recorded",
+		"Artifacts directory is created and contains result files"
+	],
+	"nonGoals": [
+		"Does not verify semantic correctness of the generated patch",
+		"Does not validate output against a golden file"
+	],
+	"risks": ["External adapter (localLlm) may be unavailable in CI"],
+	"reviewPersonas": [
+		{
+			"name": "CI Engineer",
+			"role": "Infrastructure",
+			"focus": ["pipeline reliability", "fail-fast behavior", "exit codes"]
+		},
+		{
+			"name": "Developer",
+			"role": "Consumer",
+			"focus": ["readable output", "clear error messages"]
+		}
+	],
+	"metadata": {
+		"linkedScenario": "smoke-001",
+		"tier": "smoke"
+	}
+}

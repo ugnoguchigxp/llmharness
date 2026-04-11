@@ -2,12 +2,15 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { loadHarnessConfig } from "./config/loadConfig";
 import { runDoctor, summarizeDoctor } from "./doctor";
+import { loadRequirements } from "./requirements/loadRequirements";
 import {
 	runAllSuites,
 	runSingleScenario,
 	runSuite,
+	type ScenarioRunResult,
 } from "./runner/scenarioRunner";
 import {
+	parseScenarioInput,
 	parseScenarioResult,
 	type ScenarioSuite,
 	ScenarioSuiteSchema,
@@ -15,11 +18,20 @@ import {
 import { MemoryService } from "./services/memoryService";
 import { parseArgv } from "./utils/argv";
 import { runCommand as execCommand } from "./utils/exec";
+import { writeJsonFile } from "./utils/fs";
 import { tryParseJson } from "./utils/json";
 
 const printHelp = (): void => {
 	console.log(
-		`llmharness commands:\n  run --scenario <id> [--config <path>]\n  eval --suite <smoke|regression|edge-cases|all> [--config <path>]\n  report --latest [--config <path>]\n  doctor [--config <path>]\n  commit-memory [--config <path>]`,
+		[
+			"llmharness commands:",
+			"  run --scenario <id> [--config <path>] [--requirements-path <path>]",
+			"  eval --suite <smoke|regression|edge-cases|all> [--config <path>]",
+			"  report --latest [--config <path>]",
+			"  doctor [--config <path>]",
+			"  commit-memory [--config <path>] [--message <msg>] [--push]",
+			"  generate-scenario --requirements <path> [--id <id>] [--suite <smoke|regression|edge-cases>] [--output <path>]",
+		].join("\n"),
 	);
 };
 
@@ -64,8 +76,21 @@ const runCommand = async (
 ): Promise<void> => {
 	const scenarioId = assertStringFlag(flags, "scenario");
 	const configPath = getOptionalConfigPath(flags);
-	const runDir = await runSingleScenario(scenarioId, configPath);
+	const requirementsPath = getOptionalStringFlag(flags, "requirements-path");
+	const runDir = await runSingleScenario(
+		scenarioId,
+		configPath,
+		requirementsPath,
+	);
 	console.log(`run completed: ${runDir}`);
+};
+
+const formatRequirementsSummary = (r: ScenarioRunResult): string => {
+	const s = r.requirementsSummary;
+	if (!s) return "[no requirements]";
+	if (s.validationStatus === "not_found") return "[req: not_found]";
+	if (s.validationStatus === "invalid") return "[req: invalid]";
+	return `[req: valid, criteria=${s.successCriteriaCount}, personas=${s.reviewPersonasCount}]`;
 };
 
 const evalCommand = async (
@@ -73,16 +98,18 @@ const evalCommand = async (
 ): Promise<void> => {
 	const suiteArg = assertStringFlag(flags, "suite");
 	const configPath = getOptionalConfigPath(flags);
-	const runDirs =
+	const results: ScenarioRunResult[] =
 		suiteArg === "all"
 			? await runAllSuites(configPath)
 			: await runSuite(
 					ScenarioSuiteSchema.parse(suiteArg) as ScenarioSuite,
 					configPath,
 				);
-	console.log(`eval completed: ${runDirs.length} scenario(s)`);
-	for (const dir of runDirs) {
-		console.log(`- ${dir}`);
+	console.log(`eval completed: ${results.length} scenario(s)`);
+	for (const r of results) {
+		console.log(
+			`- ${r.scenarioId} ${formatRequirementsSummary(r)}  ${r.runDir}`,
+		);
 	}
 };
 
@@ -124,6 +151,34 @@ const doctorCommand = async (
 	if (!summary.ok) {
 		throw new Error("doctor found one or more blocking issues.");
 	}
+};
+
+const generateScenarioCommand = async (
+	flags: Record<string, string | boolean>,
+): Promise<void> => {
+	const requirementsPath = assertStringFlag(flags, "requirements");
+	const req = await loadRequirements(requirementsPath);
+
+	const suiteArg = getOptionalStringFlag(flags, "suite") ?? "smoke";
+	const suite = ScenarioSuiteSchema.parse(suiteArg) as ScenarioSuite;
+	const idOverride = getOptionalStringFlag(flags, "id");
+	const scenarioId = idOverride ?? req.id.replace(/-req$/, "");
+
+	const scenario = parseScenarioInput({
+		id: scenarioId,
+		suite,
+		title: req.title,
+		instruction: req.task,
+		targetFiles: ["src/index.ts"],
+		expected: { mustPassTests: [], maxRiskErrors: 0, minScore: 80 },
+		requirementsPath,
+	});
+
+	const defaultOutput = `scenarios/${suite}/${scenarioId}.json`;
+	const outputPath = getOptionalStringFlag(flags, "output") ?? defaultOutput;
+	const resolved = resolve(outputPath);
+	await writeJsonFile(resolved, scenario);
+	console.log(`generate-scenario: wrote ${resolved}`);
 };
 
 const commitMemoryCommand = async (
@@ -241,6 +296,11 @@ const main = async (): Promise<void> => {
 
 	if (command === "commit-memory") {
 		await commitMemoryCommand(flags);
+		return;
+	}
+
+	if (command === "generate-scenario") {
+		await generateScenarioCommand(flags);
 		return;
 	}
 
