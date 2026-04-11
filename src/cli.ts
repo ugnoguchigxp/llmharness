@@ -3,6 +3,10 @@ import { join, resolve } from "node:path";
 import { type ReviewableFile, reviewCode } from "./adapters/codeReviewer";
 import { loadHarnessConfig } from "./config/loadConfig";
 import { runDoctor, summarizeDoctor } from "./doctor";
+import { analyzeDiff, getCommitHashes, shouldIncludeCommit } from "./generators/diffAnalyzer";
+import { saveGoldenPatch } from "./generators/goldenPatchStore";
+import { generateRequirementsFromDiff } from "./generators/requirementsGenerator";
+import { generateScenarioFromDiff } from "./generators/scenarioGenerator";
 import { loadRequirements } from "./requirements/loadRequirements";
 import {
 	runAllSuites,
@@ -32,6 +36,7 @@ const printHelp = (): void => {
 			"  doctor [--config <path>]",
 			"  commit-memory [--config <path>] [--message <msg>] [--push]",
 			"  generate-scenario --requirements <path> [--id <id>] [--suite <smoke|regression|edge-cases>] [--output <path>]",
+			"  generate-from-git (--commit <hash> | --last <n>) --suite <smoke|regression|edge-cases> [--category <bugfix|feature|refactor|test|docs>] [--output <dir>] [--eval] [--config <path>]",
 			"  code-review (--files <file1> [file2...] | --git-diff [--staged]) [--save] [--output <path>] [--config <path>]",
 		].join("\n"),
 	);
@@ -181,6 +186,114 @@ const generateScenarioCommand = async (
 	const resolved = resolve(outputPath);
 	await writeJsonFile(resolved, scenario);
 	console.log(`generate-scenario: wrote ${resolved}`);
+};
+
+const generateFromGitCommand = async (
+	flags: Record<string, string | boolean>,
+): Promise<void> => {
+	const configPath = getOptionalConfigPath(flags);
+	const config = await loadHarnessConfig(configPath);
+	const workspaceRoot = resolve(config.workspaceRoot);
+
+	const suiteArg = assertStringFlag(flags, "suite");
+	const suite = ScenarioSuiteSchema.parse(suiteArg) as ScenarioSuite;
+
+	const outputDir = resolve(
+		getOptionalStringFlag(flags, "output") ?? `scenarios/${suite}`,
+	);
+
+	const categoryFilter = getOptionalStringFlag(flags, "category");
+	const shouldEval = isTruthyFlag(flags.eval);
+
+	const goldenPatchOutputDir = resolve(
+		getOptionalStringFlag(flags, "golden-patch-dir") ??
+			`scenarios/${suite}/golden-patches`,
+	);
+
+	let commitHashes: string[];
+
+	if (typeof flags.commit === "string" && flags.commit.length > 0) {
+		commitHashes = [flags.commit];
+	} else if (typeof flags.last === "string" && flags.last.length > 0) {
+		const n = Number.parseInt(flags.last, 10);
+		if (Number.isNaN(n) || n <= 0) {
+			throw new Error("--last must be a positive integer");
+		}
+		commitHashes = await getCommitHashes(workspaceRoot, n);
+	} else {
+		throw new Error("generate-from-git requires --commit <hash> or --last <n>");
+	}
+
+	console.log(`Analyzing ${commitHashes.length} commit(s)...`);
+
+	const generated: string[] = [];
+	const skipped: string[] = [];
+
+	for (const hash of commitHashes) {
+		let analysis;
+		try {
+			analysis = await analyzeDiff(hash, workspaceRoot);
+		} catch (error) {
+			console.warn(
+				`  [skip] ${hash.slice(0, 8)}: analysis failed – ${error instanceof Error ? error.message : String(error)}`,
+			);
+			skipped.push(hash);
+			continue;
+		}
+
+		const filterOptions = categoryFilter
+			? { categories: [categoryFilter] as Parameters<typeof shouldIncludeCommit>[1]["categories"] }
+			: {};
+
+		if (!shouldIncludeCommit(analysis, filterOptions)) {
+			console.log(
+				`  [skip] ${hash.slice(0, 8)} "${analysis.commitMessage}" (filtered out)`,
+			);
+			skipped.push(hash);
+			continue;
+		}
+
+		if (analysis.files.filter((f) => !f.isDeleted).length === 0) {
+			console.log(
+				`  [skip] ${hash.slice(0, 8)} "${analysis.commitMessage}" (no non-deleted files)`,
+			);
+			skipped.push(hash);
+			continue;
+		}
+
+		const goldenPatchPath = await saveGoldenPatch(
+			hash,
+			workspaceRoot,
+			goldenPatchOutputDir,
+		);
+
+		const scenario = generateScenarioFromDiff({ diff: analysis, suite, goldenPatchPath });
+		const requirements = generateRequirementsFromDiff(analysis);
+
+		const shortHash = hash.slice(0, 8);
+		const scenarioPath = join(outputDir, `auto-${shortHash}.json`);
+		const requirementsPath = join(outputDir, `auto-${shortHash}-req.json`);
+
+		await writeJsonFile(scenarioPath, scenario);
+		await writeJsonFile(requirementsPath, requirements);
+
+		console.log(
+			`  [gen]  ${shortHash} "${analysis.commitMessage}" → ${scenarioPath}`,
+		);
+		generated.push(scenario.id);
+	}
+
+	console.log(
+		`\ngenerate-from-git: generated ${generated.length}, skipped ${skipped.length}`,
+	);
+
+	if (shouldEval && generated.length > 0) {
+		console.log(`\nRunning eval for ${generated.length} generated scenario(s)...`);
+		for (const scenarioId of generated) {
+			const runDir = await runSingleScenario(scenarioId, configPath);
+			console.log(`  eval: ${scenarioId} → ${runDir}`);
+		}
+	}
 };
 
 const codeReviewCommand = async (
@@ -418,6 +531,11 @@ const main = async (): Promise<void> => {
 
 	if (command === "generate-scenario") {
 		await generateScenarioCommand(flags);
+		return;
+	}
+
+	if (command === "generate-from-git") {
+		await generateFromGitCommand(flags);
 		return;
 	}
 
