@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import type { HarnessConfig, ScenarioResult } from "../schemas";
 import type { CodeReviewResult } from "../schemas/review";
 import { runCommand } from "../utils/exec";
@@ -17,7 +18,14 @@ export class MemoryService {
 	): Promise<string> {
 		const { memory } = this.config.adapters;
 		const gnosisAbsPath = resolve(this.config.workspaceRoot, memory.gnosisPath);
-		const command = `bun run src/scripts/${script}.ts ${args.map(shellQuote).join(" ")}`;
+
+		// Resolve Bun executable: PATH or fallback to ~/.bun/bin/bun
+		const bunPath = await this.resolveRunner([
+			"bun",
+			join(homedir(), ".bun/bin/bun"),
+		]);
+		const runner = bunPath.includes(".ts") ? "npx tsx" : bunPath;
+		const command = `${runner} src/scripts/${script}.ts ${args.map(shellQuote).join(" ")}`;
 		const { strict = false } = options;
 
 		let result: Awaited<ReturnType<typeof runCommand>>;
@@ -204,5 +212,37 @@ export class MemoryService {
 		if (result.exitCode !== 0) {
 			throw new Error(`Git push failed: ${result.stderr || result.stdout}`);
 		}
+	}
+
+	async enqueueKnowFlowTask(
+		topic: string,
+		options: { mode?: string; priority?: number } = {},
+	): Promise<void> {
+		const { memory } = this.config.adapters;
+		if (!memory.enabled) return;
+
+		const args = ["--topic", topic];
+		if (options.mode) {
+			args.push("--mode", options.mode);
+		}
+		if (options.priority !== undefined) {
+			args.push("--priority", String(options.priority));
+		}
+		args.push("--requested-by", `llmharness-${memory.sessionId}`);
+
+		await this.runGnosisScript("enqueue-task", args, { strict: true });
+	}
+
+	private async resolveRunner(candidates: string[]): Promise<string> {
+		for (const cmd of candidates) {
+			try {
+				const result = await runCommand(`which ${cmd} || ls ${cmd}`, {
+					cwd: resolve(this.config.workspaceRoot),
+					timeoutMs: 1000,
+				});
+				if (result.exitCode === 0) return cmd;
+			} catch (_) {}
+		}
+		return "npx tsx"; // Global fallback
 	}
 }

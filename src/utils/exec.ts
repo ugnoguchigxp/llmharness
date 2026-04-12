@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+
 export type CommandResult = {
 	command: string;
 	exitCode: number;
@@ -19,6 +21,24 @@ export const runCommand = async (
 ): Promise<CommandResult> => {
 	const { cwd, env, stdin, timeoutMs } = options;
 	const started = Date.now();
+
+	// Support for environments without Bun (e.g. standard Node.js)
+	if (typeof Bun === "undefined") {
+		const result = spawnSync("zsh", ["-lc", command], {
+			cwd,
+			env: { ...process.env, ...env },
+			input: stdin,
+			timeout: timeoutMs,
+			encoding: "utf8",
+		});
+		return {
+			command,
+			exitCode: result.status ?? 1,
+			stdout: result.stdout?.toString() ?? "",
+			stderr: result.stderr?.toString() ?? "",
+			durationMs: Date.now() - started,
+		};
+	}
 
 	const child = Bun.spawn({
 		cmd: ["zsh", "-lc", command],

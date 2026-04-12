@@ -634,6 +634,20 @@ const commitMemoryCommand = async (
 			console.log(`Ingesting verified run: ${runDir}`);
 			await memory.ingestVerified(result.scenarioId, result);
 
+			// Trigger KnowFlow task to expand knowledge around this verified solution
+			let topic = result.scenarioId;
+			try {
+				const scenario = await loadScenarioById(result.scenarioId);
+				topic = scenario.title || result.scenarioId;
+			} catch (_) {
+				console.warn(
+					`Failed to load scenario ${result.scenarioId} for task meta, using ID as topic.`,
+				);
+			}
+
+			console.log(`Enqueuing KnowFlow task for topic: ${topic}`);
+			await memory.enqueueKnowFlowTask(topic, { mode: "expand" });
+
 			const commitMessage =
 				getOptionalStringFlag(flags, "message") ??
 				(config.adapters.memory.git.autoCommit
