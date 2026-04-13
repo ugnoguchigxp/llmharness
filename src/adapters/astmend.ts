@@ -9,6 +9,7 @@ import { runCommand } from "../utils/exec";
 import { postJson } from "../utils/http";
 import { tryParseJson } from "../utils/json";
 import { type PatchApplyInput, registerPatchApplier } from "./registry";
+import { resolveCommandPath } from "../utils/resolve";
 
 export type AstmendApplyInput = PatchApplyInput & {
 	config: HarnessConfig;
@@ -336,7 +337,8 @@ const applyWithAstmendCandidate = async (
 		return applyWithAstmendLib(patch, targetFiles, config, astmendConfig);
 	}
 
-	const cliResult = await runCommand(astmendConfig.command, {
+	const command = await resolveCommandPath(astmendConfig.command, config);
+	const cliResult = await runCommand(command, {
 		cwd: resolve(config.workspaceRoot),
 		stdin: patch,
 		timeoutMs: astmendConfig.timeoutMs,

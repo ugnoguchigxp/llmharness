@@ -32,6 +32,10 @@ export class MemoryService {
 		try {
 			result = await runCommand(command, {
 				cwd: gnosisAbsPath,
+				env: {
+					GNOSIS_ROOT: gnosisAbsPath,
+					GNOSIS_LOCAL_LLM_PATH: join(gnosisAbsPath, "services/local-llm"),
+				},
 				timeoutMs: 30000,
 			});
 		} catch (error) {

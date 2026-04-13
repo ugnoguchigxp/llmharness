@@ -12,6 +12,7 @@ import { runCommand } from "../utils/exec";
 import { postJson } from "../utils/http";
 import { tryParseJson } from "../utils/json";
 import { type RiskReviewInput, registerRiskReviewer } from "./registry";
+import { resolveCommandPath } from "../utils/resolve";
 
 export type DiffGuardInput = RiskReviewInput & {
 	config: HarnessConfig;
@@ -272,8 +273,9 @@ const reviewWithDiffGuardCandidate = async (
 		}
 	}
 
+	const command = await resolveCommandPath(diffGuardConfig.command, config);
 	const cliResult = await runDiffGuardCli(
-		diffGuardConfig.command,
+		command,
 		patch,
 		sourceFiles,
 		resolve(config.workspaceRoot),

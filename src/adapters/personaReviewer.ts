@@ -14,6 +14,7 @@ import {
 	resolveApiUrl,
 	shellQuoteLlm,
 } from "../utils/llm";
+import { resolveCommandPath } from "../utils/resolve";
 
 type OpenAICompatibleResponse = {
 	choices?: Array<{ message?: { content?: unknown } }>;
@@ -130,7 +131,7 @@ export const reviewWithPersona = async (
 	}
 
 	try {
-		let command = llmConfig.command;
+		let command = await resolveCommandPath(llmConfig.command, config);
 		let stdin: string | undefined = prompt;
 		const placeholder = llmConfig.commandPromptPlaceholder;
 

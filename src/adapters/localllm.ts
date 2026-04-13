@@ -21,6 +21,7 @@ import {
 	type GenerationInput,
 	registerPatchGenerator,
 } from "./registry";
+import { resolveCommandPath } from "../utils/resolve";
 
 export type Feedback = GenerationFeedback;
 
@@ -426,7 +427,7 @@ const generateWithLocalLlmCandidate = async (
 		});
 	}
 
-	let command = llmConfig.command;
+	let command = await resolveCommandPath(llmConfig.command, config);
 	let stdin: string | undefined = prompt;
 	const placeholder = llmConfig.commandPromptPlaceholder;
 

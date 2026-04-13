@@ -5,7 +5,7 @@
 	"adapters": {
 		"localLlm": {
 			"mode": "cli",
-			"command": "/Users/y.noguchi/Code/localLlm/scripts/gemma4 --prompt {{prompt}}",
+			"command": "gemma4 --prompt {{prompt}}",
 			"commandPromptMode": "arg",
 			"commandPromptPlaceholder": "{{prompt}}",
 			"model": "gemma4-default",

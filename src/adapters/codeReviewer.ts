@@ -15,6 +15,7 @@ import {
 	resolveApiUrl,
 	shellQuoteLlm,
 } from "../utils/llm";
+import { resolveCommandPath } from "../utils/resolve";
 
 export type ReviewableFile = {
 	path: string;
@@ -189,7 +190,7 @@ export const reviewCode = async (
 		);
 	}
 
-	let command = llmConfig.command;
+	let command = await resolveCommandPath(llmConfig.command, config);
 	let stdin: string | undefined = prompt;
 	const placeholder = llmConfig.commandPromptPlaceholder;
 

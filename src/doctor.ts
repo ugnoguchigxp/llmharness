@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { resolveCommandPath } from "./utils/resolve";
 import type { HarnessConfig } from "./schemas";
 import { runCommand } from "./utils/exec";
 import { exists, listJsonFilesRecursive, readJsonFile } from "./utils/fs";
@@ -21,21 +22,41 @@ const checkCliCommand = async (
 	name: string,
 	command: string,
 	cwd: string,
+	config?: HarnessConfig,
 ): Promise<HealthItem> => {
-	const bin = firstToken(command);
-	const probe = await runCommand(`command -v ${bin}`, { cwd, timeoutMs: 5000 });
-	if (probe.exitCode !== 0 || probe.stdout.trim().length === 0) {
+	if (!config) {
 		return {
 			name,
 			status: "error",
-			message: `binary not found: ${bin}`,
+			message: "Config required for command resolution.",
+		};
+	}
+
+	const resolvedCommand = await resolveCommandPath(command, config);
+	const bin = firstToken(resolvedCommand);
+
+	if (resolvedCommand !== command) {
+		return {
+			name,
+			status: "ok",
+			message: `binary found: ${bin}`,
+		};
+	}
+
+	// Fallback to basic check if not resolved (e.g. if everything failed)
+	const probe = await runCommand(`command -v ${bin}`, { cwd, timeoutMs: 5000 });
+	if (probe.exitCode === 0 && probe.stdout.trim().length > 0) {
+		return {
+			name,
+			status: "ok",
+			message: `binary found: ${probe.stdout.trim()}`,
 		};
 	}
 
 	return {
 		name,
-		status: "ok",
-		message: `binary found: ${probe.stdout.trim()}`,
+		status: "error",
+		message: `binary not found: ${bin}`,
 	};
 };
 
@@ -218,6 +239,7 @@ export const runDoctor = async (
 				"localLlm.cli",
 				config.adapters.localLlm.command,
 				cwd,
+				config,
 			),
 		);
 	} else {
@@ -235,6 +257,7 @@ export const runDoctor = async (
 			"astmend.cli",
 			config.adapters.astmend.command,
 			cwd,
+			config,
 		);
 		if (
 			cliHealth.status === "error" &&
@@ -282,6 +305,7 @@ export const runDoctor = async (
 				"diffGuard.cli",
 				config.adapters.diffGuard.command,
 				cwd,
+				config,
 			),
 		);
 	} else {

@@ -15,7 +15,7 @@ const baseConfig = parseHarnessConfig({
 	},
 	context: {
 		enabled: true,
-		maxContextTokens: 4000,
+		maxContextTokens: 10000,
 		includeImports: true,
 		includeTests: true,
 		maxFileLines: 500,
